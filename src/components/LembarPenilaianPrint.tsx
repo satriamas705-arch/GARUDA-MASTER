@@ -408,6 +408,15 @@ export const LembarPenilaianPrint: React.FC<LembarPenilaianPrintProps> = ({
                       {peserta.golongan || extractGolonganName(settings.golongan)} (Tingkat {peserta.tingkatTKU})
                     </span>
                   </div>
+                  {(peserta.kontakHp || peserta.namaPembina) && (
+                    <div className="flex">
+                      <span className="w-28 font-bold text-stone-700">No. HP Pembina</span>
+                      <span className="w-4">:</span>
+                      <span className="text-stone-900 font-semibold">
+                        {peserta.kontakHp || '-'} {peserta.namaPembina ? `(${peserta.namaPembina})` : ''}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* QR Code Verifikasi Resmi on Right Header (Pasfoto dihilangkan sesuai permintaan) */}

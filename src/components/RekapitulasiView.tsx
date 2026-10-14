@@ -733,6 +733,11 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
             return (skor / maxSkor) * 100 >= 80;
           }).length;
           const belumLulusPj = diujiCount - lulusPj;
+          const totalSkorPj = itemsByPenguji.reduce((sum, item) => {
+            const skor = item.penilaian!.wawancara.reduce((s, w) => s + (w.poin || 0), 0);
+            return sum + skor;
+          }, 0);
+          const avgSkor = diujiCount > 0 ? (totalSkorPj / diujiCount).toFixed(1) : '0';
           const totalPersenPj = itemsByPenguji.reduce((sum, item) => {
             const isSiaga = item.peserta.golongan === 'Siaga' || pj.golongan === 'Siaga';
             const maxSkor = item.penilaian!.wawancara.length * 5 || (isSiaga ? 45 : 55);

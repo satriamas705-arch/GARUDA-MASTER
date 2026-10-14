@@ -101,6 +101,11 @@ export const DEFAULT_WAWANCARA_TEMPLATE: Omit<ItemWawancara, 'poin' | 'catatan'>
     pencapaian: 'Dapat membuat simpul dan atau ikatan',
   },
   {
+    id: 11,
+    pencapaian: 'Dapat menggunakan komputer/HP, teknologi informasi minimal internet (untuk penggalang pengujian IT untuk membuat dan memposting di IG video tentang kegiatan pencapaian garuda di kwarran dengan mencantumkan hastag dan tag yang ditentukan kwarcab banyumas)',
+  },
+];
+
 export const PENGGALANG_ADMINISTRASI_TEMPLATE = DEFAULT_ADMINISTRASI_TEMPLATE;
 export const PENGGALANG_WAWANCARA_TEMPLATE = DEFAULT_WAWANCARA_TEMPLATE;
 
