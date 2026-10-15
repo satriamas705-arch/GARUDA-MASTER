@@ -29,7 +29,7 @@ import {
   INITIAL_KELOMPOK,
   INITIAL_PENILAIAN,
 } from './data/initialData';
-import { Sidebar, TopHeader, NavTab } from './components/Navbar';
+import { TopNavigation, NavTab } from './components/Navbar';
 import { DashboardView } from './components/DashboardView';
 import { PesertaView } from './components/PesertaView';
 import { PengujiView } from './components/PengujiView';
@@ -83,7 +83,6 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDriveSyncOpen, setIsDriveSyncOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Sync to localStorage
   useEffect(() => {
@@ -472,15 +471,16 @@ export default function App() {
   ).length;
 
   return (
-    <div className="min-h-screen bg-stone-100/70 text-stone-900 flex font-sans">
-      {/* Sidebar: Menu di Samping Kiri */}
-      <Sidebar
+    <div className="min-h-screen bg-stone-100/70 text-stone-900 flex flex-col font-sans">
+      {/* Menu Navigasi di Bagian Atas */}
+      <TopNavigation
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
         settings={settings}
         pesertaCount={pesertaInGolonganCount}
         sudahDinilaiCount={sudahDinilaiInGolonganCount}
         currentUser={currentUser}
+        onTriggerLogout={() => setIsLogoutModalOpen(true)}
         onOpenSettings={() => {
           if (currentUser.role === 'admin') {
             setIsSettingsOpen(true);
@@ -488,26 +488,7 @@ export default function App() {
         }}
         onOpenDriveSync={() => setIsDriveSyncOpen(true)}
         onSelectGolongan={handleSelectGolongan}
-        mobileOpen={mobileSidebarOpen}
-        onCloseMobile={() => setMobileSidebarOpen(false)}
       />
-
-      {/* Kolom Konten Utama: Header Atas (Nama & Logout) + Main View */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <TopHeader
-          activeTab={activeTab}
-          currentUser={currentUser}
-          settings={settings}
-          onOpenMobileMenu={() => setMobileSidebarOpen(true)}
-          onTriggerLogout={() => setIsLogoutModalOpen(true)}
-          onOpenSettings={() => {
-            if (currentUser.role === 'admin') {
-              setIsSettingsOpen(true);
-            }
-          }}
-          onOpenDriveSync={() => setIsDriveSyncOpen(true)}
-          onSelectGolongan={handleSelectGolongan}
-        />
 
         {/* Main Content Area (hidden during print when printPesertaId modal is active) */}
         <main
@@ -637,7 +618,6 @@ export default function App() {
           </div>
         </div>
       </footer>
-      </div>
 
       {/* Printable Sheet Modal (Official 2-Page layout matching user photos) */}
       {printPeserta && printPenilaian && (
