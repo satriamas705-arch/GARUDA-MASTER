@@ -18,9 +18,16 @@ import {
   GoogleUserProfile,
 } from '../utils/googleAuth';
 import {
+  DEFAULT_APP_FOLDER_NAME,
   GOOGLE_DRIVE_FOLDER_ID,
   GOOGLE_DRIVE_FOLDER_URL,
   MASTER_SYNC_FILENAME,
+  getOrCreateAppFolder,
+  uploadFileToFolder,
+  readFileFromDrive,
+  readJsonFromDrive,
+  downloadFileFromDrive,
+  listFilesInAppFolder,
   verifyFolderAccess,
   findMasterSyncFile,
   downloadJsonFile,
@@ -176,23 +183,41 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
     if (isOpen) {
       const token = getGoogleAccessToken();
       if (token) {
-        checkFolder(token, targetFolderId);
-        loadBackups(token);
+        checkFolder(token).then((activeFolderId) => {
+          loadBackups(token, activeFolderId);
+        });
       }
     }
-  }, [isOpen, targetFolderId]);
+  }, [isOpen]);
 
-  const checkFolder = async (token: string, folderId: string) => {
-    const res = await verifyFolderAccess(token, folderId);
-    setFolderCheck(res);
+  const checkFolder = async (token: string, folderId?: string): Promise<string> => {
+    try {
+      // Prioritaskan pengecekan / pembuatan otomatis folder aplikasi di root Google Drive pengguna
+      const appFolder = await getOrCreateAppFolder(token, DEFAULT_APP_FOLDER_NAME);
+      setTargetFolderId(appFolder.id);
+      setFolderCheck({
+        checked: true,
+        accessible: true,
+        canWrite: true,
+        name: appFolder.name,
+        webViewLink: appFolder.webViewLink,
+      });
+      return appFolder.id;
+    } catch (e: any) {
+      console.warn('getOrCreateAppFolder warning, checking specified folderId:', e);
+      const res = await verifyFolderAccess(token, folderId || targetFolderId);
+      setFolderCheck(res);
+      return folderId || targetFolderId;
+    }
   };
 
-  const loadBackups = async (token?: string) => {
+  const loadBackups = async (token?: string, folderId?: string) => {
     try {
       setLoadingBackups(true);
       const accToken = token || getGoogleAccessToken();
       if (!accToken) return;
-      const files = await listFolderFiles(accToken, targetFolderId);
+      const fId = folderId || targetFolderId;
+      const files = await listFolderFiles(accToken, fId);
       setBackupFiles(files);
     } catch (e: any) {
       console.warn('Error loading backup list:', e);
@@ -213,8 +238,8 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
         setHasToken(true);
         if (res.user) setGoogleUser(res.user);
         if (res.profile) setGoogleProfile(res.profile);
-        await checkFolder(res.accessToken, targetFolderId);
-        await loadBackups(res.accessToken);
+        const activeFolderId = await checkFolder(res.accessToken);
+        await loadBackups(res.accessToken, activeFolderId);
       }
     } catch (err: any) {
       setErrorMessage(
@@ -710,6 +735,165 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
     } catch (err: any) {
       setSyncStatus('error');
       setErrorMessage(err.message || 'Gagal memulihkan berkas cadangan.');
+    }
+  };
+
+  // Unduh file dari Google Drive ke disk lokal komputer/HP pengguna
+  const handleDownloadDriveFile = async (file: DriveFileInfo) => {
+    try {
+      const accessToken = getGoogleAccessToken();
+      if (!accessToken) throw new Error('Token Google Drive tidak tersedia. Silakan hubungkan akun Google.');
+      setSyncStatus('syncing');
+      setSyncMessage(`Mengunduh berkas "${file.name}"...`);
+      await downloadFileFromDrive(accessToken, file.id, file.name);
+      setSyncStatus('success');
+      setSyncMessage(`Berkas "${file.name}" berhasil diunduh ke perangkat Anda!`);
+    } catch (err: any) {
+      setSyncStatus('error');
+      setErrorMessage(err.message || 'Gagal mengunduh berkas.');
+    }
+  };
+
+  // Unggah file baru (JSON, CSV, atau TXT) langsung ke folder aplikasi di Google Drive pengguna
+  const handleUploadFileToAppFolder = async (
+    format: 'json' | 'csv_peserta' | 'csv_penguji' | 'txt_summary'
+  ) => {
+    try {
+      let accessToken = getGoogleAccessToken();
+      if (!accessToken) {
+        const authRes = await signInWithGoogle();
+        if (!authRes?.accessToken) throw new Error('Autentikasi Google dibatalkan.');
+        accessToken = authRes.accessToken;
+      }
+
+      setSyncStatus('syncing');
+      setSyncMessage('Menyiapkan berkas untuk diunggah ke Google Drive...');
+
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[:.]/g, '-')
+        .substring(0, 19);
+      let fileName = '';
+      let content = '';
+      let mimeType = 'application/json';
+      let desc = '';
+
+      if (format === 'json') {
+        fileName = `cadangan_pramuka_garuda_${timestamp}.json`;
+        const payload: SyncPayload = {
+          version: 1,
+          appName: DEFAULT_APP_FOLDER_NAME,
+          lastSyncedAt: new Date().toISOString(),
+          syncedBy: {
+            role: currentUser?.role || 'admin',
+            username: currentUser?.username || 'admin',
+            displayName: currentUser?.displayName || 'Pengguna',
+            googleEmail: googleProfile?.email || googleUser?.email || undefined,
+          },
+          peserta: pesertaList,
+          penguji: pengujiList,
+          kelompok: kelompokList,
+          penilaian: penilaianMap,
+          settings,
+        };
+        content = JSON.stringify(payload, null, 2);
+        mimeType = 'application/json';
+        desc = `Cadangan JSON lengkap oleh ${currentUser?.displayName}`;
+      } else if (format === 'csv_peserta') {
+        fileName = `data_peserta_garuda_${timestamp}.csv`;
+        const headers = [
+          'NO',
+          'NAMA LENGKAP',
+          'KWARRAN',
+          'PANGKALAN',
+          'GOLONGAN',
+          'TINGKAT TKU',
+          'GENDER',
+          'STATUS PENILAIAN',
+        ];
+        const rows = pesertaList.map((p, idx) => [
+          idx + 1,
+          `"${p.nama.replace(/"/g, '""')}"`,
+          `"${p.kwarran || '-'}"`,
+          `"${p.pangkalan.replace(/"/g, '""')}"`,
+          p.golongan,
+          p.tingkatTKU,
+          p.jenisKelamin,
+          penilaianMap[p.id] ? 'Sudah Dinilai' : 'Belum Dinilai',
+        ]);
+        content = [headers.join(','), ...rows.map((r) => r.join(','))].join(
+          '\n'
+        );
+        mimeType = 'text/csv';
+        desc = `Data peserta CSV diekspor ke Google Drive`;
+      } else if (format === 'csv_penguji') {
+        fileName = `data_penguji_garuda_${timestamp}.csv`;
+        const headers = [
+          'NO',
+          'NAMA PENGUJI',
+          'NTA/NIP',
+          'KWARRAN',
+          'PANGKALAN',
+          'GOLONGAN',
+          'NO HP',
+        ];
+        const rows = pengujiList.map((pj, idx) => [
+          idx + 1,
+          `"${pj.nama.replace(/"/g, '""')}"`,
+          `"${pj.nipNta || '-'}"`,
+          `"${pj.kwarran || '-'}"`,
+          `"${pj.pangkalan.replace(/"/g, '""')}"`,
+          pj.golongan || 'Semua',
+          `"${pj.noHp || '-'}"`,
+        ]);
+        content = [headers.join(','), ...rows.map((r) => r.join(','))].join(
+          '\n'
+        );
+        mimeType = 'text/csv';
+        desc = `Data penguji CSV diekspor ke Google Drive`;
+      } else {
+        fileName = `ringkasan_penilaian_${timestamp}.txt`;
+        const totalPeserta = pesertaList.length;
+        const totalDinilai = pesertaList.filter(
+          (p) => !!penilaianMap[p.id]
+        ).length;
+        content = `RINGKASAN PENILAIAN PRAMUKA GARUDA BANYUMAS
+Tanggal: ${new Date().toLocaleString('id-ID')}
+Diekspor Oleh: ${currentUser?.displayName} (${currentUser?.role})
+Akun Google: ${googleProfile?.email || googleUser?.email || '-'}
+--------------------------------------------------
+Total Peserta: ${totalPeserta}
+Sudah Dinilai: ${totalDinilai}
+Belum Dinilai: ${totalPeserta - totalDinilai}
+Total Penguji: ${pengujiList.length}
+Total Tim Penilai: ${kelompokList.length}
+--------------------------------------------------
+Folder Penyimpanan: ${folderCheck.name || DEFAULT_APP_FOLDER_NAME}
+ID Folder: ${targetFolderId}
+`;
+        mimeType = 'text/plain';
+        desc = `Ringkasan Penilaian Pramuka Garuda`;
+      }
+
+      await uploadFileToFolder(
+        accessToken,
+        targetFolderId,
+        fileName,
+        content,
+        mimeType,
+        desc,
+        false
+      );
+      setSyncStatus('success');
+      setSyncMessage(
+        `Berkas "${fileName}" berhasil disimpan langsung ke folder Google Drive Anda!`
+      );
+      await loadBackups(accessToken, targetFolderId);
+    } catch (err: any) {
+      setSyncStatus('error');
+      setErrorMessage(
+        err.message || 'Gagal mengunggah berkas ke Google Drive.'
+      );
     }
   };
 
@@ -1537,10 +1721,64 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
           )}
 
           {activeTab === 'backups' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-stone-200">
+            <div className="space-y-3.5">
+              {/* Toolbar Buat & Unggah File ke Folder Google Drive Pengguna */}
+              <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                    <UploadCloud className="w-4 h-4 text-amber-700" />
+                    <span>Simpan &amp; Unggah Berkas ke Folder Google Drive Pengguna</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
+                    Folder: {folderCheck.name || DEFAULT_APP_FOLDER_NAME}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleUploadFileToAppFolder('json')}
+                    className="p-2 rounded-lg bg-white hover:bg-amber-100/60 border border-amber-300 text-stone-800 text-xs font-bold transition-all text-center flex flex-col items-center gap-1 cursor-pointer shadow-xs"
+                    title="Unggah berkas JSON cadangan lengkap ke Google Drive"
+                  >
+                    <FileJson className="w-4 h-4 text-amber-700" />
+                    <span>Cadangan JSON</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleUploadFileToAppFolder('csv_peserta')}
+                    className="p-2 rounded-lg bg-white hover:bg-amber-100/60 border border-amber-300 text-stone-800 text-xs font-bold transition-all text-center flex flex-col items-center gap-1 cursor-pointer shadow-xs"
+                    title="Ekspor dan simpan data calon peserta format CSV ke Google Drive"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+                    <span>Ekspor Peserta CSV</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleUploadFileToAppFolder('csv_penguji')}
+                    className="p-2 rounded-lg bg-white hover:bg-amber-100/60 border border-amber-300 text-stone-800 text-xs font-bold transition-all text-center flex flex-col items-center gap-1 cursor-pointer shadow-xs"
+                    title="Ekspor dan simpan data tim penguji format CSV ke Google Drive"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-blue-700" />
+                    <span>Ekspor Penguji CSV</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleUploadFileToAppFolder('txt_summary')}
+                    className="p-2 rounded-lg bg-white hover:bg-amber-100/60 border border-amber-300 text-stone-800 text-xs font-bold transition-all text-center flex flex-col items-center gap-1 cursor-pointer shadow-xs"
+                    title="Simpan ringkasan statistik penilaian format TXT ke Google Drive"
+                  >
+                    <FileDown className="w-4 h-4 text-stone-700" />
+                    <span>Ringkasan TXT</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pb-1.5 border-b border-stone-200">
                 <div className="text-xs font-bold text-stone-800 uppercase tracking-wide">
-                  Berkas Cadangan di Google Drive
+                  Daftar Berkas di Folder Aplikasi ({backupFiles.length} Berkas)
                 </div>
                 <button
                   type="button"
@@ -1561,7 +1799,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
               ) : backupFiles.length === 0 ? (
                 <div className="py-8 text-center text-xs text-stone-500">
                   <FileJson className="w-8 h-8 mx-auto text-stone-400 mb-2" />
-                  <p>Belum ada berkas cadangan di folder Google Drive ini.</p>
+                  <p>Belum ada berkas di folder Google Drive ini.</p>
                   <button
                     type="button"
                     onClick={handleCreateManualBackup}
@@ -1575,6 +1813,8 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
                 <div className="space-y-2">
                   {backupFiles.map((file) => {
                     const isMaster = file.name === MASTER_SYNC_FILENAME;
+                    const isCsv = file.name.endsWith('.csv');
+                    const isTxt = file.name.endsWith('.txt');
                     return (
                       <div
                         key={file.id}
@@ -1589,10 +1829,18 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
                             className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                               isMaster
                                 ? 'bg-amber-600 text-white'
+                                : isCsv
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : isTxt
+                                ? 'bg-blue-100 text-blue-800 border border-blue-200'
                                 : 'bg-stone-100 text-stone-600 border border-stone-200'
                             }`}
                           >
-                            <FileJson className="w-4 h-4" />
+                            {isCsv ? (
+                              <FileSpreadsheet className="w-4 h-4" />
+                            ) : (
+                              <FileJson className="w-4 h-4" />
+                            )}
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
@@ -1602,6 +1850,11 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
                               {isMaster && (
                                 <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 text-[9px] font-black rounded-sm uppercase">
                                   Master Data
+                                </span>
+                              )}
+                              {isCsv && (
+                                <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[9px] font-black rounded-sm uppercase">
+                                  CSV
                                 </span>
                               )}
                             </div>
@@ -1620,16 +1873,41 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
                           </div>
                         </div>
 
-                        <div className="shrink-0 flex items-center gap-2">
+                        <div className="shrink-0 flex items-center gap-1.5 flex-wrap justify-end">
                           <button
                             type="button"
-                            onClick={() => triggerRestoreFile(file)}
-                            className="px-2.5 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
-                            title="Pulihkan dan satukan data dari file ini"
+                            onClick={() => handleDownloadDriveFile(file)}
+                            className="px-2 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                            title="Unduh berkas ini ke komputer/HP Anda"
                           >
-                            <DownloadCloud className="w-3.5 h-3.5 text-amber-700" />
-                            <span>Pulihkan (Restore)</span>
+                            <FileDown className="w-3.5 h-3.5 text-stone-600" />
+                            <span className="hidden sm:inline">Unduh</span>
                           </button>
+
+                          {file.webViewLink && (
+                            <a
+                              href={file.webViewLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold transition-colors flex items-center gap-1"
+                              title="Buka berkas di Google Drive"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 text-stone-600" />
+                              <span className="hidden sm:inline">Drive</span>
+                            </a>
+                          )}
+
+                          {file.name.endsWith('.json') && (
+                            <button
+                              type="button"
+                              onClick={() => triggerRestoreFile(file)}
+                              className="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                              title="Pulihkan dan satukan data dari berkas ini ke aplikasi"
+                            >
+                              <DownloadCloud className="w-3.5 h-3.5 text-white" />
+                              <span>Pulihkan (Baca)</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     );

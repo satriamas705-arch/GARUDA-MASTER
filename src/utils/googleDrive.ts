@@ -8,10 +8,18 @@ import {
   UserRole,
 } from '../types';
 
+export const DEFAULT_APP_FOLDER_NAME = 'Penilaian Pramuka Garuda Banyumas';
 export const GOOGLE_DRIVE_FOLDER_ID = '184OdtL5XmCOVYL0IzwNkCelzBnQL8ADm';
 export const GOOGLE_DRIVE_FOLDER_URL =
   'https://drive.google.com/drive/folders/184OdtL5XmCOVYL0IzwNkCelzBnQL8ADm?usp=drive_link';
 export const MASTER_SYNC_FILENAME = 'pramuka_garuda_master_sync.json';
+
+export interface AppFolderInfo {
+  id: string;
+  name: string;
+  webViewLink?: string;
+  isNewlyCreated: boolean;
+}
 
 export interface SyncPayload {
   version: number;
@@ -52,6 +60,7 @@ export interface FolderAccessStatus {
   name?: string;
   error?: string;
   isSharedDrive?: boolean;
+  webViewLink?: string;
 }
 
 export interface SyncMergeReport {
@@ -80,6 +89,285 @@ export interface SyncMergeReport {
   remoteLastUpdated?: string;
   remoteUpdatedBy?: string;
   storageLocation?: string;
+}
+
+/**
+ * 1. MANAJEMEN FOLDER:
+ * Mengecek apakah folder bernama `folderName` sudah ada di Google Drive pengguna.
+ * Dengan scope https://www.googleapis.com/auth/drive.file, Google Drive API
+ * hanya dapat mengakses dan mengelola folder/file yang dibuat oleh aplikasi ini.
+ * Jika belum ada, fungsi ini otomatis membuat foldernya di root Google Drive pengguna ('root' in parents).
+ */
+export async function getOrCreateAppFolder(
+  accessToken: string,
+  folderName: string = DEFAULT_APP_FOLDER_NAME
+): Promise<AppFolderInfo> {
+  // 1. Cek folder yang sudah ada di Drive pengguna
+  try {
+    const q = encodeURIComponent(
+      `name = '${folderName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
+    );
+    const fields = encodeURIComponent('files(id, name, webViewLink, capabilities)');
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&spaces=drive&pageSize=10`;
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.files && data.files.length > 0) {
+        const found = data.files[0];
+        return {
+          id: found.id,
+          name: found.name,
+          webViewLink:
+            found.webViewLink ||
+            `https://drive.google.com/drive/folders/${found.id}`,
+          isNewlyCreated: false,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Pengecekan folder aplikasi gagal, mencoba membuat baru:', err);
+  }
+
+  // 2. Jika belum ada, buat foldernya di root Google Drive pengguna
+  const createRes = await fetch(
+    'https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: folderName,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: ['root'],
+        description: `Folder penyimpanan data dan sinkronisasi aplikasi ${folderName}`,
+      }),
+    }
+  );
+
+  if (!createRes.ok) {
+    const err = await createRes.json().catch(() => ({}));
+    throw new Error(
+      err.error?.message ||
+        `Gagal membuat folder di Google Drive pengguna (Status: ${createRes.status})`
+    );
+  }
+
+  const created = await createRes.json();
+  return {
+    id: created.id,
+    name: created.name,
+    webViewLink:
+      created.webViewLink ||
+      `https://drive.google.com/drive/folders/${created.id}`,
+    isNewlyCreated: true,
+  };
+}
+
+/**
+ * 2. SIMPAN / UNGGAH DATA:
+ * Mengunggah file (JSON, TXT, CSV, dsb) langsung ke dalam folder aplikasi di Google Drive.
+ * Jika file dengan nama tersebut sudah ada di folder dan `replaceIfExists` bernilai true,
+ * file lama akan ditimpa (update), jika tidak akan dibuat file baru.
+ */
+export async function uploadFileToFolder(
+  accessToken: string,
+  folderId: string,
+  fileName: string,
+  content: string | Blob,
+  mimeType: string = 'application/json',
+  description?: string,
+  replaceIfExists: boolean = true
+): Promise<DriveFileInfo> {
+  const boundary = '-------314159265358979323846';
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const closeDelim = `\r\n--${boundary}--`;
+
+  // Cek apakah file sudah ada di folder tersebut jika replaceIfExists aktif
+  if (replaceIfExists) {
+    try {
+      const q = encodeURIComponent(
+        `'${folderId}' in parents and name = '${fileName.replace(/'/g, "\\'")}' and trashed = false`
+      );
+      const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=1`;
+      const searchRes = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        if (searchData.files && searchData.files.length > 0) {
+          const existingId = searchData.files[0].id;
+          const textBody =
+            typeof content === 'string'
+              ? content
+              : await (content as Blob).text();
+
+          // Update isi file lama via uploadType=media
+          const updateRes = await fetch(
+            `https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media&fields=id,name,mimeType,modifiedTime,size,description,webViewLink`,
+            {
+              method: 'PATCH',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': mimeType,
+              },
+              body: textBody,
+            }
+          );
+          if (updateRes.ok) {
+            return await updateRes.json();
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Gagal mencari file existing, membuat file baru:', e);
+    }
+  }
+
+  // Buat file baru di folder tujuan via multipart upload
+  const metadata = {
+    name: fileName,
+    mimeType: mimeType,
+    parents: [folderId],
+    description: description || `File disimpan dari aplikasi Penilaian Pramuka Garuda`,
+  };
+
+  const textContent =
+    typeof content === 'string'
+      ? content
+      : await (content as Blob).text();
+
+  const multipartBody =
+    delimiter +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) +
+    delimiter +
+    `Content-Type: ${mimeType}\r\n\r\n` +
+    textContent +
+    closeDelim;
+
+  const res = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,modifiedTime,size,description,webViewLink',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body: multipartBody,
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(
+      err.error?.message ||
+        `Gagal mengunggah file ke Google Drive (Status: ${res.status})`
+    );
+  }
+
+  return await res.json();
+}
+
+/**
+ * 3. SINKRONISASI / BACA DATA:
+ * Membaca isi file dari Google Drive sebagai string teks (JSON, CSV, atau TXT)
+ */
+export async function readFileFromDrive(
+  accessToken: string,
+  fileId: string
+): Promise<string> {
+  const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(
+      err.error?.message ||
+        `Gagal membaca file dari Google Drive (Status: ${res.status})`
+    );
+  }
+
+  return await res.text();
+}
+
+/**
+ * Membaca file JSON dari Google Drive dan mengembalikan sebagai typed object
+ */
+export async function readJsonFromDrive<T = any>(
+  accessToken: string,
+  fileId: string
+): Promise<T> {
+  const text = await readFileFromDrive(accessToken, fileId);
+  try {
+    return JSON.parse(text) as T;
+  } catch (err: any) {
+    throw new Error(`Format file bukan JSON yang valid: ${err.message}`);
+  }
+}
+
+/**
+ * Mengunduh file dari Google Drive langsung ke perangkat penyimpanan pengguna (browser download)
+ */
+export async function downloadFileFromDrive(
+  accessToken: string,
+  fileId: string,
+  fileName: string
+): Promise<void> {
+  const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Gagal mengunduh file (Status: ${res.status})`);
+  }
+
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(blobUrl);
+}
+
+/**
+ * Mendapatkan daftar file yang ada di dalam folder Google Drive pengguna
+ */
+export async function listFilesInAppFolder(
+  accessToken: string,
+  folderId: string
+): Promise<DriveFileInfo[]> {
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
+  const fields = encodeURIComponent(
+    'files(id, name, mimeType, modifiedTime, size, description, webViewLink)'
+  );
+  const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&orderBy=modifiedTime desc&pageSize=50`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(
+      err.error?.message ||
+        `Gagal memuat daftar file dari folder Google Drive (Status: ${res.status})`
+    );
+  }
+
+  const data = await res.json();
+  return data.files || [];
 }
 
 /**

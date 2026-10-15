@@ -13,9 +13,9 @@ import firebaseConfig from '../../firebase-applet-config.json';
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Provider with full Google Drive & Google Sheets scopes
+// Provider with Google Drive (drive.file) & Google Sheets scopes
 const provider = new GoogleAuthProvider();
-provider.addScope('https://www.googleapis.com/auth/drive');
+provider.addScope('https://www.googleapis.com/auth/drive.file');
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
 provider.setCustomParameters({
   prompt: 'select_account',
@@ -166,7 +166,7 @@ async function requestTokenViaGIS(): Promise<{
       const client = googleGsi.initTokenClient({
         client_id: firebaseConfig.oAuthClientId,
         scope:
-          'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
         callback: async (response: any) => {
           if (response.error) {
             reject(
