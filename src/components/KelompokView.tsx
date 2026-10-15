@@ -156,13 +156,16 @@ export const KelompokView: React.FC<KelompokViewProps> = ({
     const nextNum = kelompokList.length + 1;
     setFormNama(`Tim Penilai ${nextNum}`);
     setFormJK('Putra');
-    setFormPangkalan(pesertaList[0]?.pangkalan || 'SMP Negeri 1 Purwokerto');
+    const andikInGol = pesertaList.filter((p) => (p.golongan || 'Penggalang') === effectiveGolongan);
+    const availablePj = pengujiList.filter((pj) => !pj.golongan || pj.golongan === effectiveGolongan);
+    setFormPangkalan(andikInGol[0]?.pangkalan || settings.kwartirCabang || 'SMP Negeri 1 Purwokerto');
     setFormNamaPenguji(
-      pengujiList.length > 0 ? pengujiList[0].nama : 'Tim Penguji Pramuka Garuda'
+      availablePj.length > 0 ? availablePj[0].nama : 'Tim Penguji Pramuka Garuda'
     );
-    setSelectedPengujiIds(pengujiList.length > 0 ? [pengujiList[0].id] : []);
+    setSelectedPengujiIds(availablePj.length > 0 ? [availablePj[0].id] : []);
     setSelectedAndikIds([]);
     setFormPembina('');
+    setFormGolongan(effectiveGolongan);
     setIsModalOpen(true);
   };
 
@@ -254,6 +257,7 @@ export const KelompokView: React.FC<KelompokViewProps> = ({
         namaAndik: selectedAndikNames,
         pesertaIds: selectedAndikIds,
         pembinaPendamping: formPembina.trim(),
+        golongan: effectiveGolongan,
       };
       onAddKelompok(newTim);
 
@@ -352,9 +356,12 @@ export const KelompokView: React.FC<KelompokViewProps> = ({
     setParseResult(null);
   };
 
-  // Filtered Tim List
+  // Filtered Tim List: Hanya menampilkan Tim Penilai untuk golongan aktif/dipilih
   const filteredKelompok = kelompokList.filter((k) => {
     const andikMembers = pesertaList.filter((p) => p.kelompokId === k.id);
+    const teamGolongan = k.golongan || (andikMembers.length > 0 ? andikMembers[0].golongan : 'Penggalang');
+    if (teamGolongan !== effectiveGolongan) return false;
+
     const andikMatch = andikMembers.some((a) =>
       a.nama.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -372,12 +379,18 @@ export const KelompokView: React.FC<KelompokViewProps> = ({
     return matchSearch && matchJK;
   });
 
-  // Calculate Overall Statistics
-  const totalAndik = pesertaList.length;
-  const totalSudahDinilai = Object.keys(penilaianMap).length;
-  const totalLulus = Object.values(penilaianMap).filter((pen) => {
+  // Calculate Overall Statistics for effectiveGolongan
+  const andikInGolongan = pesertaList.filter((p) => (p.golongan || 'Penggalang') === effectiveGolongan);
+  const totalAndik = andikInGolongan.length;
+  const totalSudahDinilai = andikInGolongan.filter((p) => !!penilaianMap[p.id]).length;
+  const isSiaga = effectiveGolongan === 'Siaga';
+  const maxSkorWawancara = isSiaga ? 45 : 55;
+  const totalLulus = andikInGolongan.filter((p) => {
+    const pen = penilaianMap[p.id];
+    if (!pen) return false;
+    const maxSkor = pen.wawancara.length * 5 || maxSkorWawancara;
     const skor = pen.wawancara.reduce((s, w) => s + (w.poin || 0), 0);
-    return (skor / 55) * 100 >= 80;
+    return (skor / maxSkor) * 100 >= 80;
   }).length;
 
   return (
@@ -405,11 +418,16 @@ export const KelompokView: React.FC<KelompokViewProps> = ({
                 <ShieldCheck className="w-6 h-6" />
               </div>
               <div>
-                <h1 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight">
-                  Data Tim Penilai
-                </h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight">
+                    Data Tim Penilai - Golongan {effectiveGolongan}
+                  </h1>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                    {filteredKelompok.length} Tim
+                  </span>
+                </div>
                 <p className="text-xs sm:text-sm text-stone-500">
-                  Daftar tim penilai resmi, nama tim penguji yang bertugas, nama andik, nama pangkalan, serta ekspor & impor rekap nilai tiap tim.
+                  Daftar tim penilai resmi golongan {effectiveGolongan}, tim penguji yang bertugas, nama andik, pangkalan, serta ekspor & impor rekap nilai tiap tim.
                 </p>
               </div>
             </div>
@@ -1001,33 +1019,35 @@ export const KelompokView: React.FC<KelompokViewProps> = ({
                   className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-amber-900 focus:ring-2 focus:ring-amber-500"
                 />
 
-                {/* Checklist Penguji Master */}
-                {pengujiList.length > 0 && (
+                {/* Checklist Penguji Master (Khusus Golongan Aktif) */}
+                {pengujiList.filter((pj) => !pj.golongan || pj.golongan === effectiveGolongan).length > 0 && (
                   <div className="mt-2 p-3 bg-amber-50/50 rounded-xl border border-amber-200/60">
                     <span className="text-[10px] font-extrabold text-amber-900 uppercase block mb-1.5">
-                      Pilih Cepat dari Master Data Penguji:
+                      Pilih Cepat Penguji Golongan {effectiveGolongan}:
                     </span>
                     <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                      {pengujiList.map((pj) => {
-                        const isChecked = selectedPengujiIds.includes(pj.id);
-                        return (
-                          <button
-                            key={pj.id}
-                            type="button"
-                            onClick={() => handleTogglePenguji(pj)}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all ${
-                              isChecked
-                                ? 'bg-amber-600 text-white shadow-xs'
-                                : 'bg-white text-stone-700 border border-stone-200 hover:border-amber-400'
-                            }`}
-                          >
-                            <Check
-                              className={`w-3 h-3 ${isChecked ? 'opacity-100' : 'opacity-0'}`}
-                            />
-                            <span>{pj.nama}</span>
-                          </button>
-                        );
-                      })}
+                      {pengujiList
+                        .filter((pj) => !pj.golongan || pj.golongan === effectiveGolongan)
+                        .map((pj) => {
+                          const isChecked = selectedPengujiIds.includes(pj.id);
+                          return (
+                            <button
+                              key={pj.id}
+                              type="button"
+                              onClick={() => handleTogglePenguji(pj)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all ${
+                                isChecked
+                                  ? 'bg-amber-600 text-white shadow-xs'
+                                  : 'bg-white text-stone-700 border border-stone-200 hover:border-amber-400'
+                              }`}
+                            >
+                              <Check
+                                className={`w-3 h-3 ${isChecked ? 'opacity-100' : 'opacity-0'}`}
+                              />
+                              <span>{pj.nama}</span>
+                            </button>
+                          );
+                        })}
                     </div>
                   </div>
                 )}
@@ -1037,7 +1057,7 @@ export const KelompokView: React.FC<KelompokViewProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-stone-800">
-                    Tetapkan Nama Andik (Peserta) ke Tim Ini ({selectedAndikIds.length} Dipilih)
+                    Tetapkan Nama Andik Golongan {effectiveGolongan} ({selectedAndikIds.length} Dipilih)
                   </label>
                   <span className="text-[10px] text-stone-500">
                     Centang andik yang akan dinilai oleh tim ini
@@ -1045,28 +1065,30 @@ export const KelompokView: React.FC<KelompokViewProps> = ({
                 </div>
 
                 <div className="max-h-44 overflow-y-auto border border-stone-200 rounded-xl p-2 divide-y divide-stone-100 bg-stone-50">
-                  {pesertaList.length === 0 ? (
+                  {pesertaList.filter((p) => (p.golongan || 'Penggalang') === effectiveGolongan).length === 0 ? (
                     <div className="p-3 text-center text-xs text-stone-400 italic">
-                      Belum ada peserta terdaftar di aplikasi.
+                      Belum ada peserta terdaftar untuk golongan {effectiveGolongan}.
                     </div>
                   ) : (
-                    pesertaList.map((p) => {
-                      const isSelected = selectedAndikIds.includes(p.id);
-                      const currentTim = kelompokList.find((k) => k.id === p.kelompokId);
-                      const isAnotherTim = currentTim && currentTim.id !== editingKelompok?.id;
+                    pesertaList
+                      .filter((p) => (p.golongan || 'Penggalang') === effectiveGolongan)
+                      .map((p) => {
+                        const isSelected = selectedAndikIds.includes(p.id);
+                        const currentTim = kelompokList.find((k) => k.id === p.kelompokId);
+                        const isAnotherTim = currentTim && currentTim.id !== editingKelompok?.id;
 
-                      return (
-                        <label
-                          key={p.id}
-                          className="flex items-center justify-between p-2 hover:bg-white rounded-lg cursor-pointer transition-colors"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => handleToggleAndik(p.id)}
-                              className="rounded-md text-amber-600 focus:ring-amber-500 w-4 h-4"
-                            />
+                        return (
+                          <label
+                            key={p.id}
+                            className="flex items-center justify-between p-2 hover:bg-white rounded-lg cursor-pointer transition-colors"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleAndik(p.id)}
+                                className="rounded-md text-amber-600 focus:ring-amber-500 w-4 h-4"
+                              />
                             <div>
                               <div className="text-xs font-bold text-stone-900">
                                 {p.nama}

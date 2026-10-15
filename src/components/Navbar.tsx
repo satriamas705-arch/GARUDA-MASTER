@@ -244,7 +244,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           );
         })}
 
-        {/* Golongan Switcher in Sidebar */}
+        {/* Golongan Switcher in Sidebar (Khusus Admin: tombol ganti golongan, Penguji: badge golongan aktif) */}
         <div className="pt-3 pb-1 border-t border-stone-800">
           <div className="px-3 pb-2 text-[10px] font-bold text-stone-400 uppercase tracking-widest flex items-center justify-between">
             <span className="flex items-center gap-1.5">
@@ -256,52 +256,76 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-1.5 px-1">
-            {[
-              {
-                id: 'Siaga' as GolonganType,
-                label: 'Siaga',
-                dot: 'bg-emerald-500',
-                activeBg: 'bg-emerald-950/90 border-emerald-500 text-emerald-200 ring-1 ring-emerald-500/50',
-              },
-              {
-                id: 'Penggalang' as GolonganType,
-                label: 'Penggalang',
-                dot: 'bg-rose-500',
-                activeBg: 'bg-rose-950/90 border-rose-500 text-rose-200 ring-1 ring-rose-500/50',
-              },
-              {
-                id: 'Penegak' as GolonganType,
-                label: 'Penegak',
-                dot: 'bg-amber-500',
-                activeBg: 'bg-amber-950/90 border-amber-500 text-amber-200 ring-1 ring-amber-500/50',
-              },
-              {
-                id: 'Pandega' as GolonganType,
-                label: 'Pandega',
-                dot: 'bg-stone-400',
-                activeBg: 'bg-stone-800 border-stone-400 text-stone-200 ring-1 ring-stone-400/50',
-              },
-            ].map((gol) => {
-              const isSelected = activeGolongan === gol.id;
-              return (
-                <button
-                  key={gol.id}
-                  type="button"
-                  onClick={() => onSelectGolongan && onSelectGolongan(gol.id)}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
-                    isSelected
-                      ? `${gol.activeBg} shadow-xs`
-                      : 'bg-stone-900/70 border-stone-800 text-stone-400 hover:text-white hover:bg-stone-800'
-                  }`}
-                  title={`Ganti tampilan ke Golongan ${gol.label}`}
-                >
-                  <span className={`w-2 h-2 rounded-full ${gol.dot} shrink-0`} />
-                  <span className="truncate">{gol.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          {isPenguji ? (
+            <div className="mx-1 px-3 py-2 rounded-xl bg-stone-900 border border-amber-500/30 flex items-center gap-2.5">
+              <span
+                className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                  activeGolongan === 'Siaga'
+                    ? 'bg-emerald-400'
+                    : activeGolongan === 'Penggalang'
+                    ? 'bg-rose-400'
+                    : activeGolongan === 'Penegak'
+                    ? 'bg-amber-400'
+                    : 'bg-stone-300'
+                }`}
+              />
+              <div>
+                <div className="font-extrabold text-xs text-amber-300">
+                  Golongan {activeGolongan}
+                </div>
+                <div className="text-[10px] text-stone-400 leading-tight">
+                  Dipilih saat login penguji
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-1.5 px-1">
+              {[
+                {
+                  id: 'Siaga' as GolonganType,
+                  label: 'Siaga',
+                  dot: 'bg-emerald-500',
+                  activeBg: 'bg-emerald-950/90 border-emerald-500 text-emerald-200 ring-1 ring-emerald-500/50',
+                },
+                {
+                  id: 'Penggalang' as GolonganType,
+                  label: 'Penggalang',
+                  dot: 'bg-rose-500',
+                  activeBg: 'bg-rose-950/90 border-rose-500 text-rose-200 ring-1 ring-rose-500/50',
+                },
+                {
+                  id: 'Penegak' as GolonganType,
+                  label: 'Penegak',
+                  dot: 'bg-amber-500',
+                  activeBg: 'bg-amber-950/90 border-amber-500 text-amber-200 ring-1 ring-amber-500/50',
+                },
+                {
+                  id: 'Pandega' as GolonganType,
+                  label: 'Pandega',
+                  dot: 'bg-stone-400',
+                  activeBg: 'bg-stone-800 border-stone-400 text-stone-200 ring-1 ring-stone-400/50',
+                },
+              ].map((gol) => {
+                const isSelected = activeGolongan === gol.id;
+                return (
+                  <button
+                    key={gol.id}
+                    type="button"
+                    onClick={() => onSelectGolongan && onSelectGolongan(gol.id)}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                      isSelected
+                        ? `${gol.activeBg} shadow-xs`
+                        : 'bg-stone-900/70 border-stone-800 text-stone-400 hover:text-white hover:bg-stone-800'
+                    }`}
+                    title={`Ganti tampilan ke Golongan ${gol.label}`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${gol.dot} shrink-0`} />
+                    <span className="truncate">{gol.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Google Drive Cloud Sync button for all users */}
@@ -483,7 +507,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
           {/* Right: Nama Pengguna, Golongan Switcher & Tombol Logout & Sync Drive */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Golongan Switcher Selector Pill */}
+            {/* Golongan Badge for Penguji or Switcher for Admin */}
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-stone-800/90 border border-stone-700 shadow-inner">
               <span
                 className={`w-2.5 h-2.5 rounded-full shrink-0 ${
@@ -500,17 +524,23 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 <span className="text-[10px] font-bold text-stone-400 uppercase hidden sm:inline">
                   Golongan:
                 </span>
-                <select
-                  value={activeGolongan}
-                  onChange={(e) => onSelectGolongan && onSelectGolongan(e.target.value as GolonganType)}
-                  className="bg-transparent font-bold text-xs text-amber-300 focus:outline-none cursor-pointer pr-1"
-                  title="Ganti Golongan Penilaian yang ditampilkan"
-                >
-                  <option value="Siaga" className="bg-stone-900 text-white">Siaga (7-10 Thn)</option>
-                  <option value="Penggalang" className="bg-stone-900 text-white">Penggalang (11-15 Thn)</option>
-                  <option value="Penegak" className="bg-stone-900 text-white">Penegak (16-20 Thn)</option>
-                  <option value="Pandega" className="bg-stone-900 text-white">Pandega (21-25 Thn)</option>
-                </select>
+                {currentUser?.role === 'penguji' ? (
+                  <span className="font-extrabold text-xs text-amber-300">
+                    {activeGolongan}
+                  </span>
+                ) : (
+                  <select
+                    value={activeGolongan}
+                    onChange={(e) => onSelectGolongan && onSelectGolongan(e.target.value as GolonganType)}
+                    className="bg-transparent font-bold text-xs text-amber-300 focus:outline-none cursor-pointer pr-1"
+                    title="Ganti Golongan Penilaian yang ditampilkan"
+                  >
+                    <option value="Siaga" className="bg-stone-900 text-white">Siaga (7-10 Thn)</option>
+                    <option value="Penggalang" className="bg-stone-900 text-white">Penggalang (11-15 Thn)</option>
+                    <option value="Penegak" className="bg-stone-900 text-white">Penegak (16-20 Thn)</option>
+                    <option value="Pandega" className="bg-stone-900 text-white">Pandega (21-25 Thn)</option>
+                  </select>
+                )}
               </div>
             </div>
             {/* Google Sheets Live Link (jika sudah disinkronkan) */}

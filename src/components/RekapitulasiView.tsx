@@ -50,9 +50,13 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
   onOpenPrintPreview,
   onNavigateToNilai,
 }) => {
-  const initialGolongan = activeGolongan || currentUser?.selectedGolongan || extractGolonganName(settings.golongan) || 'Penggalang';
+  const effectiveGolongan: GolonganType =
+    activeGolongan ||
+    currentUser?.selectedGolongan ||
+    extractGolonganName(settings.golongan) ||
+    'Penggalang';
+
   const [rekapTab, setRekapTab] = useState<'kolektif' | 'penguji'>('kolektif');
-  const [filterGolongan, setFilterGolongan] = useState<'ALL' | GolonganType>(initialGolongan);
   const [selectedPengujiId, setSelectedPengujiId] = useState<string>(
     currentUser?.pengujiId || 'ALL'
   );
@@ -62,12 +66,6 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
-
-  useEffect(() => {
-    if (activeGolongan) {
-      setFilterGolongan(activeGolongan);
-    }
-  }, [activeGolongan]);
 
   // Build combined row data
   const rowDataList = pesertaList.map((p) => {
@@ -82,10 +80,9 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
     };
   });
 
-  // Base rows filtered by selected Golongan
+  // Base rows filtered strictly by effectiveGolongan
   const rowsInSelectedGolongan = rowDataList.filter((item) => {
-    if (filterGolongan === 'ALL') return true;
-    return item.peserta.golongan === filterGolongan;
+    return (item.peserta.golongan || 'Penggalang') === effectiveGolongan;
   });
 
   // Filter for Collective Table
@@ -139,7 +136,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
 
   // Penguji in active Golongan
   const pengujiInGolongan = pengujiList.filter(
-    (pj) => filterGolongan === 'ALL' || !pj.golongan || pj.golongan === filterGolongan
+    (pj) => !pj.golongan || pj.golongan === effectiveGolongan
   );
 
   // Generate QR for collective recap
@@ -147,7 +144,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
     const qrInfo = [
       `BERITA ACARA REKAPITULASI PRAMUKA GARUDA`,
       `Kwartir: ${settings.kwartirCabang}`,
-      `Golongan: ${filterGolongan === 'ALL' ? settings.golongan : filterGolongan}`,
+      `Golongan: ${effectiveGolongan}`,
       `Tahun: ${settings.tahun}`,
       `Total Peserta: ${totalPeserta}`,
       `Sudah Dinilai: ${sudahDinilaiCount}`,
@@ -158,7 +155,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
     QRCode.toDataURL(qrInfo, { width: 120, margin: 1 })
       .then((url) => setQrCodeDataUrl(url))
       .catch((err) => console.error(err));
-  }, [settings, totalPeserta, sudahDinilaiCount, lulusCount, filterGolongan]);
+  }, [settings, totalPeserta, sudahDinilaiCount, lulusCount, effectiveGolongan]);
 
   const handleExportExcelAll = () => {
     const selectedKel = kelompokList.find((k) => k.id === filterKelompok);
@@ -195,10 +192,10 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
           <div>
             <h2 className="text-lg font-black text-stone-900 tracking-wide uppercase flex items-center gap-2">
               <Award className="w-5 h-5 text-amber-700" />
-              <span>Rekapitulasi Laporan Nilai Pramuka Garuda</span>
+              <span>Rekapitulasi Laporan Nilai - Golongan {effectiveGolongan}</span>
             </h2>
             <p className="text-xs text-stone-500 mt-0.5">
-              {settings.golongan} • {settings.kwartirCabang} • TAHUN {settings.tahun}
+              Golongan {effectiveGolongan} • {settings.kwartirCabang} • TAHUN {settings.tahun}
             </p>
           </div>
 
@@ -248,7 +245,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t border-stone-100">
           <div className="bg-stone-50 p-3 rounded-xl border border-stone-200">
             <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block">
-              Total Calon Garuda ({filterGolongan})
+              Total Calon Garuda ({effectiveGolongan})
             </span>
             <div className="text-xl sm:text-2xl font-black text-stone-900 mt-0.5">
               {totalPeserta}
@@ -331,29 +328,22 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
             </button>
           </div>
 
-          {/* Golongan Filter Selector */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-            <span className="text-xs font-bold text-stone-500 flex items-center gap-1 shrink-0">
-              <Layers className="w-3.5 h-3.5 text-amber-700" />
-              <span>Golongan:</span>
+          {/* Golongan Indicator */}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className={`px-3 py-1 rounded-xl text-xs font-bold text-white shadow-xs ${
+              effectiveGolongan === 'Siaga'
+                ? 'bg-emerald-600'
+                : effectiveGolongan === 'Penggalang'
+                ? 'bg-rose-600'
+                : effectiveGolongan === 'Penegak'
+                ? 'bg-amber-600'
+                : 'bg-stone-700'
+            }`}>
+              Khusus Golongan {effectiveGolongan}
             </span>
-            {(['ALL', 'Siaga', 'Penggalang', 'Penegak', 'Pandega'] as const).map((gol) => {
-              const isSelected = filterGolongan === gol;
-              return (
-                <button
-                  key={gol}
-                  type="button"
-                  onClick={() => setFilterGolongan(gol)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                    isSelected
-                      ? 'bg-stone-900 text-amber-400 ring-1 ring-amber-400 shadow-xs'
-                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-                  }`}
-                >
-                  {gol === 'ALL' ? 'Semua Golongan' : gol}
-                </button>
-              );
-            })}
+            <span className="text-xs font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+              {totalPeserta} Peserta
+            </span>
           </div>
         </div>
       </div>
@@ -421,7 +411,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
                   BERITA ACARA &amp; REKAPITULASI PENILAIAN PRAMUKA GARUDA TAHUN {settings.tahun}
                 </h2>
                 <div className="text-[11px] text-stone-700 font-semibold mt-0.5">
-                  {filterGolongan === 'ALL' ? settings.golongan : `GOLONGAN ${filterGolongan.toUpperCase()}`} • {settings.kwartirCabang}
+                  GOLONGAN {effectiveGolongan.toUpperCase()} • {settings.kwartirCabang}
                 </div>
               </div>
             </div>
@@ -674,7 +664,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
             <UserCheck className="w-5 h-5 text-amber-700" />
             <div>
               <h3 className="text-sm font-bold text-stone-900">
-                Pilih Penguji Golongan {filterGolongan === 'ALL' ? 'Semua' : filterGolongan}
+                Pilih Penguji Golongan {effectiveGolongan}
               </h3>
               <p className="text-[11px] text-stone-500">
                 Lihat ringkasan nilai, rata-rata skor, dan daftar peserta per penguji
@@ -778,7 +768,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
-                    onClick={() => exportRekapPengujiToExcel(pj, itemsByPenguji, settings, filterGolongan)}
+                    onClick={() => exportRekapPengujiToExcel(pj, itemsByPenguji, settings, effectiveGolongan)}
                     disabled={diujiCount === 0}
                     className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-40 cursor-pointer"
                     title={`Ekspor Rekap Excel Nilai ${pj.nama}`}

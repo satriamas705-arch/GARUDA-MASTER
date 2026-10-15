@@ -144,6 +144,18 @@ export default function App() {
     return () => clearTimeout(timeout);
   }, [penilaianMap, pesertaList, pengujiList, kelompokList, settings.autoSyncToSheets]);
 
+  // Keep selectedPesertaId synchronized with selectedGolongan
+  useEffect(() => {
+    const listInGol = pesertaList.filter((p) => (p.golongan || 'Penggalang') === selectedGolongan);
+    if (listInGol.length > 0) {
+      if (!selectedPesertaId || !listInGol.some((p) => p.id === selectedPesertaId)) {
+        setSelectedPesertaId(listInGol[0].id);
+      }
+    } else {
+      setSelectedPesertaId(null);
+    }
+  }, [selectedGolongan, pesertaList]);
+
   const handleSelectTab = (tab: NavTab) => {
     setActiveTab(tab);
   };
@@ -154,6 +166,8 @@ export default function App() {
     saveCurrentAuthUser(user);
     if (user.selectedGolongan) {
       setSelectedGolongan(user.selectedGolongan);
+    } else {
+      setSelectedGolongan(extractGolonganName(settings.golongan) || 'Penggalang');
     }
     setActiveTab('dashboard');
   };
@@ -450,7 +464,12 @@ export default function App() {
     ? kelompokList.find((k) => k.id === printPeserta.kelompokId)
     : undefined;
 
-  const sudahDinilaiCount = Object.keys(penilaianMap).length;
+  const pesertaInGolonganCount = pesertaList.filter(
+    (p) => (p.golongan || 'Penggalang') === selectedGolongan
+  ).length;
+  const sudahDinilaiInGolonganCount = pesertaList.filter(
+    (p) => (p.golongan || 'Penggalang') === selectedGolongan && !!penilaianMap[p.id]
+  ).length;
 
   return (
     <div className="min-h-screen bg-stone-100/70 text-stone-900 flex font-sans">
@@ -459,8 +478,8 @@ export default function App() {
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
         settings={settings}
-        pesertaCount={pesertaList.length}
-        sudahDinilaiCount={sudahDinilaiCount}
+        pesertaCount={pesertaInGolonganCount}
+        sudahDinilaiCount={sudahDinilaiInGolonganCount}
         currentUser={currentUser}
         onOpenSettings={() => {
           if (currentUser.role === 'admin') {

@@ -75,43 +75,44 @@ export const PenilaianForm: React.FC<PenilaianFormProps> = ({
     extractGolonganName(settings.golongan) ||
     'Penggalang';
 
-  const [filterGolongan, setFilterGolongan] = useState<'SEMUA' | GolonganType>(effectiveGolongan);
-
-  useEffect(() => {
-    if (activeGolongan) {
-      setFilterGolongan(activeGolongan);
-    }
-  }, [activeGolongan]);
-
-  const displayedPeserta = pesertaList.filter((p) => {
-    if (filterGolongan === 'SEMUA') return true;
-    return (p.golongan || 'Penggalang') === filterGolongan;
-  });
+  const displayedPeserta = pesertaList.filter(
+    (p) => (p.golongan || 'Penggalang') === effectiveGolongan
+  );
 
   const currentPeserta =
     displayedPeserta.find((p) => p.id === selectedPesertaId) ||
     displayedPeserta[0] ||
-    pesertaList.find((p) => p.id === selectedPesertaId) ||
-    pesertaList[0];
+    null;
 
   const existingPenilaian = currentPeserta ? penilaianMap[currentPeserta.id] : undefined;
+
+  // Filter penguji according to effectiveGolongan
+  const availablePenguji = pengujiList.filter(
+    (pj) => !pj.golongan || pj.golongan === effectiveGolongan
+  );
 
   // Form states
   const defaultPengujiId =
     currentUser?.role === 'penguji' && currentUser.pengujiId
       ? currentUser.pengujiId
-      : pengujiList[0]?.id || '';
+      : (availablePenguji[0]?.id || pengujiList[0]?.id || '');
 
   const [pengujiId, setPengujiId] = useState<string>(
     existingPenilaian?.pengujiId || defaultPengujiId
   );
+
+  useEffect(() => {
+    if (availablePenguji.length > 0 && !availablePenguji.some((pj) => pj.id === pengujiId)) {
+      setPengujiId(availablePenguji[0].id);
+    }
+  }, [effectiveGolongan, availablePenguji, pengujiId]);
+
   const [tanggal, setTanggal] = useState<string>(
     existingPenilaian?.tanggalPenilaian || settings.tanggalDefault || new Date().toISOString().split('T')[0]
   );
   const [catatanUmum, setCatatanUmum] = useState<string>(existingPenilaian?.catatanUmum || '');
 
-  const currentGolongan: GolonganType =
-    (currentPeserta?.golongan as GolonganType) || effectiveGolongan;
+  const currentGolongan: GolonganType = effectiveGolongan;
   const targetAdminTemplate = getAdministrasiTemplate(currentGolongan);
   const targetWawancaraTemplate = getWawancaraTemplate(currentGolongan);
 
@@ -381,36 +382,14 @@ export const PenilaianForm: React.FC<PenilaianFormProps> = ({
               <label className="block text-xs font-bold uppercase tracking-wider text-amber-900/70">
                 Pilih Peserta yang Dinilai
               </label>
-              {/* Filter Golongan Pills */}
-              <div className="flex items-center gap-1">
-                {[
-                  { id: 'SEMUA', label: 'Semua' },
-                  { id: 'Siaga' as GolonganType, label: 'Siaga' },
-                  { id: 'Penggalang' as GolonganType, label: 'Penggalang' },
-                  { id: 'Penegak' as GolonganType, label: 'Penegak' },
-                  { id: 'Pandega' as GolonganType, label: 'Pandega' },
-                ].map((g) => {
-                  const isAct = filterGolongan === g.id;
-                  const count = g.id === 'SEMUA' ? pesertaList.length : pesertaList.filter((p) => p.golongan === g.id).length;
-                  return (
-                    <button
-                      key={g.id}
-                      type="button"
-                      onClick={() => {
-                        setFilterGolongan(g.id as any);
-                        const match = pesertaList.find((p) => g.id === 'SEMUA' || p.golongan === g.id);
-                        if (match) onSelectPeserta(match.id);
-                      }}
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
-                        isAct
-                          ? 'bg-amber-600 text-white shadow-xs'
-                          : 'bg-stone-100 hover:bg-stone-200 text-stone-600'
-                      }`}
-                    >
-                      {g.label} ({count})
-                    </button>
-                  );
-                })}
+              {/* Filter Golongan Badge */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                  Golongan: {effectiveGolongan}
+                </span>
+                <span className="text-[10px] font-bold text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200">
+                  {displayedPeserta.length} Peserta
+                </span>
               </div>
             </div>
 
@@ -424,7 +403,7 @@ export const PenilaianForm: React.FC<PenilaianFormProps> = ({
                   const hasPen = !!penilaianMap[p.id];
                   return (
                     <option key={p.id} value={p.id}>
-                      {p.nomorPeserta} - {p.nama} ({p.pangkalan}) [{p.golongan || 'Penggalang'}] {hasPen ? '✓' : ''}
+                      {p.nomorPeserta} - {p.nama} ({p.pangkalan}) [{p.golongan || effectiveGolongan}] {hasPen ? '✓' : ''}
                     </option>
                   );
                 })}
@@ -432,15 +411,15 @@ export const PenilaianForm: React.FC<PenilaianFormProps> = ({
 
               <div className="flex items-center gap-2 text-xs">
                 <span className={`px-2.5 py-1 font-bold rounded-lg text-white ${
-                  currentPeserta.golongan === 'Siaga'
+                  effectiveGolongan === 'Siaga'
                     ? 'bg-emerald-600'
-                    : currentPeserta.golongan === 'Penggalang'
+                    : effectiveGolongan === 'Penggalang'
                     ? 'bg-rose-600'
-                    : currentPeserta.golongan === 'Penegak'
+                    : effectiveGolongan === 'Penegak'
                     ? 'bg-amber-600'
                     : 'bg-stone-600'
                 }`}>
-                  {currentPeserta.golongan || effectiveGolongan}
+                  {effectiveGolongan}
                 </span>
                 <span className="px-2.5 py-1 bg-stone-100 text-stone-700 font-medium rounded-lg">
                   TKU: {currentPeserta.tingkatTKU}
@@ -456,14 +435,14 @@ export const PenilaianForm: React.FC<PenilaianFormProps> = ({
           <div className="flex flex-wrap items-center gap-3">
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">
-                Tim Penguji
+                Tim Penguji ({effectiveGolongan})
               </label>
               <select
                 value={pengujiId}
                 onChange={(e) => setPengujiId(e.target.value)}
                 className="bg-white border border-stone-300 text-xs sm:text-sm rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-amber-500"
               >
-                {pengujiList.map((pj) => (
+                {availablePenguji.map((pj) => (
                   <option key={pj.id} value={pj.id}>
                     {pj.nama} ({pj.jabatan}) {pj.golongan ? `[${pj.golongan}]` : ''}
                   </option>

@@ -60,13 +60,10 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
     extractGolonganName(settings?.golongan) ||
     'Penggalang';
 
-  const [filterGolongan, setFilterGolongan] = useState<'ALL' | GolonganType>(effectiveGolongan);
-
-  useEffect(() => {
-    if (activeGolongan) {
-      setFilterGolongan(activeGolongan);
-    }
-  }, [activeGolongan]);
+  // Filter Penguji strictly to effectiveGolongan
+  const filteredPengujiList = pengujiList.filter(
+    (p) => (p.golongan || 'Penggalang') === effectiveGolongan
+  );
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPenguji, setEditingPenguji] = useState<Penguji | null>(null);
@@ -99,9 +96,8 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
     setEditingPenguji(null);
     setFormNama('');
     setFormNipNta(`NTA. 11.02.00.${(pengujiList.length + 1).toString().padStart(3, '0')}`);
-    const gol = filterGolongan !== 'ALL' ? filterGolongan : effectiveGolongan;
-    setFormGolongan(gol);
-    setFormJabatan(`Andalan Cabang Urusan ${gol}`);
+    setFormGolongan(effectiveGolongan);
+    setFormJabatan(`Tim Penguji Urusan ${effectiveGolongan}`);
     setFormPangkalan(settings?.kwartirCabang || 'Kwarcab Banyumas');
     setFormHp('');
     setIsModalOpen(true);
@@ -211,10 +207,10 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-black text-stone-900 tracking-wide uppercase">
-            Data Tim Penguji Pramuka Garuda
+            Data Tim Penguji - Golongan {effectiveGolongan}
           </h2>
           <p className="text-xs text-stone-500 mt-0.5">
-            Daftar penguji resmi, andalan cabang, pelatih, dan penilai wawancara Pramuka Garuda (Total: {pengujiList.length} Penguji)
+            Daftar penguji resmi, andalan cabang, pelatih, dan penilai wawancara ({settings?.kwartirCabang || 'Kwarcab Banyumas'}) • Total: {filteredPengujiList.length} Penguji Golongan {effectiveGolongan}
           </p>
         </div>
 
@@ -278,49 +274,34 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
         </div>
       </div>
 
-      {/* Golongan Filter Bar for Penguji */}
+      {/* Golongan Indicator Bar for Penguji */}
       <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 text-xs text-stone-700 font-bold">
           <Layers className="w-4 h-4 text-amber-600" />
-          <span>Filter Golongan Penguji:</span>
+          <span>Golongan Penguji:</span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          {[
-            { id: 'ALL', label: 'Semua Golongan', count: pengujiList.length },
-            { id: 'Siaga' as GolonganType, label: 'Siaga', count: pengujiList.filter((p) => p.golongan === 'Siaga').length },
-            { id: 'Penggalang' as GolonganType, label: 'Penggalang', count: pengujiList.filter((p) => (p.golongan || 'Penggalang') === 'Penggalang').length },
-            { id: 'Penegak' as GolonganType, label: 'Penegak', count: pengujiList.filter((p) => p.golongan === 'Penegak').length },
-            { id: 'Pandega' as GolonganType, label: 'Pandega', count: pengujiList.filter((p) => p.golongan === 'Pandega').length },
-          ].map((g) => {
-            const isSelected = filterGolongan === g.id;
-            return (
-              <button
-                key={g.id}
-                type="button"
-                onClick={() => setFilterGolongan(g.id as any)}
-                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  isSelected
-                    ? 'bg-amber-600 text-white shadow-sm ring-2 ring-amber-400/40'
-                    : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
-                }`}
-              >
-                <span>{g.label}</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                  isSelected ? 'bg-amber-800 text-amber-100' : 'bg-stone-200 text-stone-600'
-                }`}>
-                  {g.count}
-                </span>
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-2">
+          <span className={`px-3 py-1 rounded-xl text-xs font-bold text-white shadow-xs ${
+            effectiveGolongan === 'Siaga'
+              ? 'bg-emerald-600'
+              : effectiveGolongan === 'Penggalang'
+              ? 'bg-rose-600'
+              : effectiveGolongan === 'Penegak'
+              ? 'bg-amber-600'
+              : 'bg-stone-700'
+          }`}>
+            Khusus Golongan {effectiveGolongan}
+          </span>
+          <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+            {filteredPengujiList.length} Penguji Terdaftar
+          </span>
         </div>
       </div>
 
       {/* Examiners Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {pengujiList
-          .filter((p) => filterGolongan === 'ALL' || (p.golongan || 'Penggalang') === filterGolongan)
+        {filteredPengujiList
           .map((p) => {
             // Count participants assessed by this examiner
             const assessedCount = Object.values(penilaianMap).filter(

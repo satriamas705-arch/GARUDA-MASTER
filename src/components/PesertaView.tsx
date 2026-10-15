@@ -192,10 +192,9 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
     setIsModalOpen(false);
   };
 
-  // Filtered List
+  // Filtered List: Hanya menampilkan peserta dari golongan yang aktif/dipilih
   const filteredList = pesertaList.filter((p) => {
-    const matchGolongan =
-      filterGolongan === 'ALL' || (p.golongan || 'Penggalang') === filterGolongan;
+    const matchGolongan = (p.golongan || 'Penggalang') === effectiveGolongan;
 
     const matchSearch =
       p.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -346,14 +345,14 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-black text-stone-900 tracking-wide uppercase">
-              Data Peserta Uji Garuda
+              Data Peserta Uji Garuda - Golongan {effectiveGolongan}
             </h2>
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300">
-              {settings.golongan}
+              {effectiveGolongan}
             </span>
           </div>
           <p className="text-xs text-stone-500 mt-0.5">
-            Kelola data calon Pramuka Garuda ({settings.kwartirCabang}) • Total: {pesertaList.length} Peserta
+            Kelola data calon Pramuka Garuda ({settings.kwartirCabang}) • Total: {filteredList.length} Peserta Golongan {effectiveGolongan}
           </p>
         </div>
 
@@ -415,42 +414,28 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
 
       {/* Filter and Search Bar */}
       <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200 space-y-3">
-        {/* Golongan Filter Pills */}
+        {/* Golongan Filter Indicator */}
         <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-stone-100">
           <div className="flex items-center gap-1.5 text-xs text-stone-700 font-bold">
             <Layers className="w-4 h-4 text-amber-600" />
-            <span>Filter Golongan Peserta:</span>
+            <span>Golongan Peserta:</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            {[
-              { id: 'ALL', label: 'Semua Golongan', count: pesertaList.length },
-              { id: 'Siaga' as GolonganType, label: 'Siaga', count: pesertaList.filter((p) => p.golongan === 'Siaga').length },
-              { id: 'Penggalang' as GolonganType, label: 'Penggalang', count: pesertaList.filter((p) => p.golongan === 'Penggalang').length },
-              { id: 'Penegak' as GolonganType, label: 'Penegak', count: pesertaList.filter((p) => p.golongan === 'Penegak').length },
-              { id: 'Pandega' as GolonganType, label: 'Pandega', count: pesertaList.filter((p) => p.golongan === 'Pandega').length },
-            ].map((g) => {
-              const isSelected = filterGolongan === g.id;
-              return (
-                <button
-                  key={g.id}
-                  type="button"
-                  onClick={() => setFilterGolongan(g.id as any)}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    isSelected
-                      ? 'bg-amber-600 text-white shadow-sm ring-2 ring-amber-400/40'
-                      : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
-                  }`}
-                >
-                  <span>{g.label}</span>
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                    isSelected ? 'bg-amber-800 text-amber-100' : 'bg-stone-200 text-stone-600'
-                  }`}>
-                    {g.count}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-2">
+            <span className={`px-3 py-1 rounded-xl text-xs font-bold text-white shadow-xs ${
+              effectiveGolongan === 'Siaga'
+                ? 'bg-emerald-600'
+                : effectiveGolongan === 'Penggalang'
+                ? 'bg-rose-600'
+                : effectiveGolongan === 'Penegak'
+                ? 'bg-amber-600'
+                : 'bg-stone-700'
+            }`}>
+              Khusus Golongan {effectiveGolongan}
+            </span>
+            <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+              {filteredList.length} Peserta Terdaftar
+            </span>
           </div>
         </div>
 

@@ -91,7 +91,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({
     e.preventDefault();
     setErrorMessage(null);
 
-    const result = attemptLogin(username, password, pengujiList, selectedGolongan);
+    // Pilihan golongan hanya diberikan pada penguji, admin tidak dibatasi golongan saat login
+    const golForLogin = activeTab === 'penguji' ? selectedGolongan : undefined;
+    const result = attemptLogin(username, password, pengujiList, golForLogin);
     if (result.success && result.user) {
       onLoginSuccess(result.user);
     } else {
@@ -240,86 +242,86 @@ export const LoginForm: React.FC<LoginFormProps> = ({
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Field Pilihan Golongan Penilaian (Khususnya untuk Penguji & Admin) */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Pilih Golongan Penilaian</span>
-                  </label>
-                  <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                    Aktif: {selectedGolongan}
-                  </span>
-                </div>
+              {/* Field Pilihan Golongan Penilaian (HANYA MUNCUL PADA PENGUJI, DIHILANGKAN PADA ADMIN) */}
+              {activeTab === 'penguji' ? (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Pilih Golongan Penilaian</span>
+                    </label>
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      Aktif: {selectedGolongan}
+                    </span>
+                  </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    {
-                      id: 'Siaga' as GolonganType,
-                      label: 'Siaga',
-                      age: '7-10 Thn',
-                      tku: 'Mula • Bantu • Tata',
-                      activeBorder: 'border-emerald-500 bg-emerald-50/80 ring-2 ring-emerald-500 text-emerald-950',
-                      badgeBg: 'bg-emerald-500',
-                    },
-                    {
-                      id: 'Penggalang' as GolonganType,
-                      label: 'Penggalang',
-                      age: '11-15 Thn',
-                      tku: 'Ramu • Rakit • Terap',
-                      activeBorder: 'border-rose-500 bg-rose-50/80 ring-2 ring-rose-500 text-rose-950',
-                      badgeBg: 'bg-rose-500',
-                    },
-                    {
-                      id: 'Penegak' as GolonganType,
-                      label: 'Penegak',
-                      age: '16-20 Thn',
-                      tku: 'Bantara • Laksana',
-                      activeBorder: 'border-amber-500 bg-amber-50/80 ring-2 ring-amber-500 text-amber-950',
-                      badgeBg: 'bg-amber-500',
-                    },
-                    {
-                      id: 'Pandega' as GolonganType,
-                      label: 'Pandega',
-                      age: '21-25 Thn',
-                      tku: 'Pandega Garuda',
-                      activeBorder: 'border-stone-600 bg-stone-100 ring-2 ring-stone-600 text-stone-950',
-                      badgeBg: 'bg-stone-700',
-                    },
-                  ].map((gol) => {
-                    const isSelected = selectedGolongan === gol.id;
-                    return (
-                      <button
-                        key={gol.id}
-                        type="button"
-                        onClick={() => handleGolonganChange(gol.id)}
-                        className={`p-2 sm:p-2.5 rounded-xl border text-left transition-all cursor-pointer relative ${
-                          isSelected
-                            ? gol.activeBorder + ' shadow-sm'
-                            : 'border-stone-200 bg-stone-50/60 hover:bg-white text-stone-700'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className={`w-2.5 h-2.5 rounded-full ${gol.badgeBg} shrink-0`} />
-                            <span className="font-extrabold text-xs text-stone-900 truncate">
-                              {gol.label}
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      {
+                        id: 'Siaga' as GolonganType,
+                        label: 'Siaga',
+                        age: '7-10 Thn',
+                        tku: 'Mula • Bantu • Tata',
+                        activeBorder: 'border-emerald-500 bg-emerald-50/80 ring-2 ring-emerald-500 text-emerald-950',
+                        badgeBg: 'bg-emerald-500',
+                      },
+                      {
+                        id: 'Penggalang' as GolonganType,
+                        label: 'Penggalang',
+                        age: '11-15 Thn',
+                        tku: 'Ramu • Rakit • Terap',
+                        activeBorder: 'border-rose-500 bg-rose-50/80 ring-2 ring-rose-500 text-rose-950',
+                        badgeBg: 'bg-rose-500',
+                      },
+                      {
+                        id: 'Penegak' as GolonganType,
+                        label: 'Penegak',
+                        age: '16-20 Thn',
+                        tku: 'Bantara • Laksana',
+                        activeBorder: 'border-amber-500 bg-amber-50/80 ring-2 ring-amber-500 text-amber-950',
+                        badgeBg: 'bg-amber-500',
+                      },
+                      {
+                        id: 'Pandega' as GolonganType,
+                        label: 'Pandega',
+                        age: '21-25 Thn',
+                        tku: 'Pandega Garuda',
+                        activeBorder: 'border-stone-600 bg-stone-100 ring-2 ring-stone-600 text-stone-950',
+                        badgeBg: 'bg-stone-700',
+                      },
+                    ].map((gol) => {
+                      const isSelected = selectedGolongan === gol.id;
+                      return (
+                        <button
+                          key={gol.id}
+                          type="button"
+                          onClick={() => handleGolonganChange(gol.id)}
+                          className={`p-2 sm:p-2.5 rounded-xl border text-left transition-all cursor-pointer relative ${
+                            isSelected
+                              ? gol.activeBorder + ' shadow-sm'
+                              : 'border-stone-200 bg-stone-50/60 hover:bg-white text-stone-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className={`w-2.5 h-2.5 rounded-full ${gol.badgeBg} shrink-0`} />
+                              <span className="font-extrabold text-xs text-stone-900 truncate">
+                                {gol.label}
+                              </span>
+                            </div>
+                            <span className="text-[9px] font-bold text-stone-400 shrink-0">
+                              {gol.age}
                             </span>
                           </div>
-                          <span className="text-[9px] font-bold text-stone-400 shrink-0">
-                            {gol.age}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-stone-500 mt-1 truncate font-medium">
-                          {gol.tku}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                          <div className="text-[10px] text-stone-500 mt-1 truncate font-medium">
+                            {gol.tku}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                {/* Quick penguji selection per selected golongan */}
-                {activeTab === 'penguji' && (
+                  {/* Quick penguji selection per selected golongan */}
                   <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 mt-2.5">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[11px] font-bold text-amber-950 flex items-center gap-1.5">
@@ -358,12 +360,22 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                       </div>
                     )}
                   </div>
-                )}
 
-                <p className="text-[10px] text-stone-500 mt-1.5 leading-tight">
-                  *Form penilaian, data peserta, data penguji, tim penilai, dan rekap nilai otomatis difilter untuk golongan <strong>{selectedGolongan}</strong>.
-                </p>
-              </div>
+                  <p className="text-[10px] text-stone-500 mt-1.5 leading-tight">
+                    *Form penilaian, data peserta, data penguji, tim penilai, dan rekap nilai otomatis difilter khusus untuk golongan <strong>{selectedGolongan}</strong> yang dipilih.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-stone-50 border border-stone-200 text-stone-700">
+                  <div className="flex items-center gap-2 text-xs font-bold text-stone-800">
+                    <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Akses Penuh Administrator Kwarcab</span>
+                  </div>
+                  <p className="text-[11px] text-stone-500 mt-1 leading-snug">
+                    Administrator memiliki hak akses untuk mengelola data master seluruh golongan (Siaga, Penggalang, Penegak, dan Pandega).
+                  </p>
+                </div>
+              )}
 
               {/* Username Input */}
               <div>

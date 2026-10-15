@@ -88,7 +88,7 @@ export function attemptLogin(
           role: 'admin',
           username: 'admin',
           displayName: 'Administrator Kwarcab',
-          selectedGolongan: selectedGolongan || 'Penggalang',
+          selectedGolongan: selectedGolongan || undefined,
         },
       };
     }
