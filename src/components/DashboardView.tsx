@@ -14,11 +14,12 @@ import {
   ClipboardList,
   Sparkles,
   Cloud,
+  Layers,
+  MapPin,
 } from 'lucide-react';
 import { PramukaBadge } from './PramukaBadge';
 import { exportRekapitulasiToExcel } from '../utils/exportExcel';
-import { extractGolonganName, GolonganType } from '../utils/golongan';
-import { Layers } from 'lucide-react';
+import { extractGolonganName, GolonganType, isSameKwarran } from '../utils/golongan';
 
 interface DashboardViewProps {
   pesertaList: Peserta[];
@@ -56,9 +57,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     extractGolonganName(settings.golongan) ||
     'Penggalang';
 
-  // Filtered by active Golongan
-  const pesertaInGolongan = pesertaList.filter((p) => p.golongan === effectiveGolongan);
-  const pengujiInGolongan = pengujiList.filter((pj) => !pj.golongan || pj.golongan === effectiveGolongan);
+  // Pembatasan wilayah Kwarran untuk Admin Kwarran & Penguji
+  const isKwarranRestricted =
+    (currentUser?.role === 'admin_kwarran' || currentUser?.role === 'penguji') &&
+    !!currentUser?.kwarran;
+  const userKwarran = currentUser?.kwarran || '';
+
+  // Filtered by active Golongan and Kwarran jika dibatasi
+  const pesertaInGolongan = pesertaList.filter((p) => {
+    const matchGol = p.golongan === effectiveGolongan;
+    const matchKw = !isKwarranRestricted || isSameKwarran(p.kwarran, userKwarran);
+    return matchGol && matchKw;
+  });
+  const pengujiInGolongan = pengujiList.filter((pj) => {
+    const matchGol = !pj.golongan || pj.golongan === effectiveGolongan;
+    const matchKw = !isKwarranRestricted || isSameKwarran(pj.kwarran, userKwarran);
+    return matchGol && matchKw;
+  });
   const kelompokInGolongan = kelompokList.filter((k) => !k.golongan || k.golongan === effectiveGolongan);
 
   const totalPeserta = pesertaInGolongan.length;

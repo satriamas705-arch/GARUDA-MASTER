@@ -423,3 +423,26 @@ export function formatTempatTanggalLahir(
 
   return parts.length > 0 ? parts.join(', ') : '-';
 }
+
+/**
+ * Normalisasi nama Kwarran untuk perbandingan akurat
+ */
+export function cleanKwarranName(kw?: string): string {
+  if (!kw) return '';
+  return kw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '')
+    .replace(/^kwarran/, '');
+}
+
+/**
+ * Mengecek apakah dua nama Kwarran sama (case-insensitive & mengabaikan spasi/prefix)
+ */
+export function isSameKwarran(kw1?: string, kw2?: string): boolean {
+  if (!kw1 || !kw2) return false;
+  const c1 = cleanKwarranName(kw1);
+  const c2 = cleanKwarranName(kw2);
+  return c1.length > 0 && c1 === c2;
+}

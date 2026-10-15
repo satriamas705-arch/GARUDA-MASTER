@@ -45,6 +45,7 @@ import {
   deteksiGolonganDariTanggalLahir,
   formatTempatTanggalLahir,
   DeteksiGolonganResult,
+  isSameKwarran,
 } from '../utils/golongan';
 
 interface PesertaViewProps {
@@ -86,10 +87,29 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
     extractGolonganName(settings.golongan) ||
     'Penggalang';
 
+  // Pembatasan wilayah Kwarran untuk Admin Kwarran & Penguji
+  const isKwarranRestricted =
+    (currentUser?.role === 'admin_kwarran' || currentUser?.role === 'penguji') &&
+    !!currentUser?.kwarran;
+  const userKwarran = currentUser?.kwarran || '';
+  const isSuperAdmin = !currentUser || currentUser.role === 'admin';
+  const isAdminKwarran = currentUser?.role === 'admin_kwarran';
+  const canManage = isSuperAdmin || isAdminKwarran;
+
+  // Scoped Peserta List khusus kwarran user jika dibatasi
+  const scopedPesertaList = useMemo(() => {
+    if (isKwarranRestricted) {
+      return pesertaList.filter((p) => isSameKwarran(p.kwarran, userKwarran));
+    }
+    return pesertaList;
+  }, [pesertaList, isKwarranRestricted, userKwarran]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterKelompok, setFilterKelompok] = useState('ALL');
   const [filterPangkalan, setFilterPangkalan] = useState('ALL');
-  const [filterKwarran, setFilterKwarran] = useState('ALL');
+  const [filterKwarran, setFilterKwarran] = useState<string>(
+    isKwarranRestricted ? userKwarran : 'ALL'
+  );
   const [filterGolongan, setFilterGolongan] = useState<'ALL' | GolonganType>(effectiveGolongan);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'LULUS' | 'BELUM_LULUS' | 'BELUM_DINILAI'>('ALL');
   const [showKwarranTable, setShowKwarranTable] = useState(false);
@@ -99,6 +119,12 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
       setFilterGolongan(activeGolongan);
     }
   }, [activeGolongan]);
+
+  useEffect(() => {
+    if (isKwarranRestricted) {
+      setFilterKwarran(userKwarran);
+    }
+  }, [isKwarranRestricted, userKwarran]);
 
   // Modal State for Add / Edit
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -138,33 +164,36 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
   const [formHp, setFormHp] = useState('');
   const [formPembina, setFormPembina] = useState('');
 
-  // Daftar unik Pangkalan/Sekolah dari seluruh peserta untuk filter
+  // Daftar unik Pangkalan/Sekolah dari scoped peserta untuk filter
   const uniqueSekolahList = useMemo(() => {
     const set = new Set<string>();
-    pesertaList.forEach((p) => {
+    scopedPesertaList.forEach((p) => {
       if (p.pangkalan && p.pangkalan.trim()) {
         set.add(p.pangkalan.trim());
       }
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [pesertaList]);
+  }, [scopedPesertaList]);
 
   // Daftar unik Kwarran dari data peserta digabung dengan daftar Kwarran Banyumas
   const uniqueKwarranList = useMemo(() => {
+    if (isKwarranRestricted) {
+      return [userKwarran];
+    }
     const set = new Set<string>();
-    pesertaList.forEach((p) => {
+    scopedPesertaList.forEach((p) => {
       if (p.kwarran && p.kwarran.trim()) {
         set.add(p.kwarran.trim());
       }
     });
     DAFTAR_KWARRAN_BANYUMAS.forEach((k) => set.add(k));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [pesertaList]);
+  }, [scopedPesertaList, isKwarranRestricted, userKwarran]);
 
   // Rekapitulasi Tabel Distribusi Peserta per Kwarran
   const kwarranDistribution = useMemo(() => {
     const stats: Record<string, { total: number; lulus: number; belum: number; belumDinilai: number }> = {};
-    pesertaList
+    scopedPesertaList
       .filter((p) => (p.golongan || 'Penggalang') === effectiveGolongan)
       .forEach((p) => {
         const kw = p.kwarran?.trim() || 'Lainnya / Belum Diisi';
@@ -184,7 +213,7 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
         }
       });
     return Object.entries(stats).sort((a, b) => b[1].total - a[1].total);
-  }, [pesertaList, effectiveGolongan, penilaianMap]);
+  }, [scopedPesertaList, effectiveGolongan, penilaianMap]);
 
   // Real-time detection inside Form Modal
   const modalDeteksiGolongan = useMemo(() => {
@@ -197,7 +226,9 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
     setFormNomor(`PG-${nextNum}/BMS/${settings.tahun || '2026'}`);
     setFormNama('');
     setFormJK('L');
-    const cleanKwarran = settings.kwarran ? settings.kwarran.replace(/KWARRAN\s*/i, '').trim() : 'Kemranjen';
+    const cleanKwarran = isKwarranRestricted && userKwarran
+      ? userKwarran
+      : settings.kwarran ? settings.kwarran.replace(/KWARRAN\s*/i, '').trim() : 'Kemranjen';
     setFormKwarran(cleanKwarran || 'Kemranjen');
     setFormTempatLahir('Banyumas');
     const defaultBirth =
@@ -225,7 +256,7 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
     setFormNomor(p.nomorPeserta);
     setFormNama(p.nama);
     setFormJK(p.jenisKelamin);
-    setFormKwarran(p.kwarran || 'Kemranjen');
+    setFormKwarran(isKwarranRestricted && userKwarran ? userKwarran : p.kwarran || 'Kemranjen');
     setFormTempatLahir(p.tempatLahir || 'Banyumas');
     setFormTanggalLahir(p.tanggalLahir || '');
     setFormPangkalan(p.pangkalan);
@@ -243,13 +274,15 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
     e.preventDefault();
     if (!formNama.trim() || !formNomor.trim()) return;
 
+    const targetKwarran = (isKwarranRestricted && userKwarran ? userKwarran : formKwarran).trim() || undefined;
+
     if (editingPeserta) {
       onUpdatePeserta({
         ...editingPeserta,
         nomorPeserta: formNomor.trim(),
         nama: formNama.trim(),
         jenisKelamin: formJK,
-        kwarran: formKwarran.trim() || undefined,
+        kwarran: targetKwarran,
         tempatLahir: formTempatLahir.trim() || undefined,
         tanggalLahir: formTanggalLahir.trim() || undefined,
         pangkalan: formPangkalan.trim(),
@@ -266,7 +299,7 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
         nomorPeserta: formNomor.trim(),
         nama: formNama.trim(),
         jenisKelamin: formJK,
-        kwarran: formKwarran.trim() || undefined,
+        kwarran: targetKwarran,
         tempatLahir: formTempatLahir.trim() || undefined,
         tanggalLahir: formTanggalLahir.trim() || undefined,
         pangkalan: formPangkalan.trim(),
@@ -283,7 +316,7 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
   };
 
   // Filtered List: Memfilter berdasarkan Golongan, Kata Kunci, Regu, Sekolah, Kwarran, & Status Nilai
-  const filteredList = pesertaList.filter((p) => {
+  const filteredList = scopedPesertaList.filter((p) => {
     const matchGolongan = (p.golongan || 'Penggalang') === effectiveGolongan;
 
     const term = searchTerm.toLowerCase();
@@ -301,7 +334,7 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
       filterPangkalan === 'ALL' || p.pangkalan === filterPangkalan;
 
     const matchKwarran =
-      filterKwarran === 'ALL' || (p.kwarran || '') === filterKwarran;
+      filterKwarran === 'ALL' || isSameKwarran(p.kwarran, filterKwarran);
 
     const pen = penilaianMap[p.id];
     let matchStatus = true;
@@ -461,6 +494,30 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
         </div>
       )}
 
+      {/* Kwarran Restriction Notice */}
+      {isKwarranRestricted && (
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-950 flex items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0">
+              <MapPin className="w-4 h-4 text-amber-700" />
+            </div>
+            <div>
+              <div className="text-xs font-black uppercase tracking-wider text-amber-900">
+                Akses Terbatas: Wilayah Kwarran {userKwarran}
+              </div>
+              <p className="text-[11px] text-stone-600 mt-0.5">
+                {currentUser?.role === 'admin_kwarran'
+                  ? 'Sebagai Admin Kwarran, Anda hanya dapat mengakses, menambah, dan mengelola calon peserta di wilayah Kwarran ' + userKwarran + '.'
+                  : 'Sebagai Penguji, Anda dibatasi untuk mengakses peserta di wilayah Kwarran ' + userKwarran + '.'}
+              </p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-amber-600 text-white shrink-0 shadow-xs">
+            Kwarran {userKwarran}
+          </span>
+        </div>
+      )}
+
       {/* Top action bar */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -474,6 +531,7 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
           </div>
           <p className="text-xs text-stone-500 mt-0.5">
             Kelola data calon Pramuka Garuda ({settings.kwartirCabang}) • Total: {filteredList.length} Peserta Golongan {effectiveGolongan}
+            {isKwarranRestricted ? ` • Kwarran ${userKwarran}` : ''}
           </p>
         </div>
 
@@ -492,21 +550,23 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
             <span>Ekspor</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setIoTab('import');
-              setParseResult(null);
-              setIsIoModalOpen(true);
-            }}
-            className="px-3.5 py-2.5 bg-stone-100 hover:bg-indigo-50 hover:text-indigo-800 text-stone-700 font-bold text-xs sm:text-sm rounded-xl flex items-center gap-1.5 border border-stone-200 hover:border-indigo-300 transition-all cursor-pointer"
-            title="Impor Data Peserta dari Excel / CSV"
-          >
-            <Upload className="w-4 h-4 text-indigo-600" />
-            <span>Impor</span>
-          </button>
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => {
+                setIoTab('import');
+                setParseResult(null);
+                setIsIoModalOpen(true);
+              }}
+              className="px-3.5 py-2.5 bg-stone-100 hover:bg-indigo-50 hover:text-indigo-800 text-stone-700 font-bold text-xs sm:text-sm rounded-xl flex items-center gap-1.5 border border-stone-200 hover:border-indigo-300 transition-all cursor-pointer"
+              title="Impor Data Peserta dari Excel / CSV"
+            >
+              <Upload className="w-4 h-4 text-indigo-600" />
+              <span>Impor</span>
+            </button>
+          )}
 
-          {onResetAllPeserta && (
+          {isSuperAdmin && onResetAllPeserta && (
             <button
               type="button"
               onClick={() => {
@@ -621,10 +681,11 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
             <select
               value={filterKwarran}
               onChange={(e) => setFilterKwarran(e.target.value)}
-              className="w-full bg-stone-50 border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-amber-500 font-medium truncate"
-              title="Filter calon peserta per Kwartir Ranting (Kwarran)"
+              disabled={isKwarranRestricted}
+              className="w-full bg-stone-50 border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-amber-500 font-medium truncate disabled:bg-stone-100 disabled:cursor-not-allowed"
+              title={isKwarranRestricted ? 'Terkunci sesuai wilayah kwarran Anda' : 'Filter calon peserta per Kwartir Ranting (Kwarran)'}
             >
-              <option value="ALL">Semua Kwarran</option>
+              {!isKwarranRestricted && <option value="ALL">Semua Kwarran</option>}
               {uniqueKwarranList.map((kw) => (
                 <option key={kw} value={kw}>
                   {kw}
@@ -1093,38 +1154,46 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
 
               {/* Kwarran (Kwartir Ranting) */}
               <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">
-                  Kwartir Ranting (Kwarran) *
+                <label className="block text-xs font-bold text-stone-700 mb-1 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Kwartir Ranting (Kwarran) *</span>
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <select
-                    value={
-                      DAFTAR_KWARRAN_BANYUMAS.includes(formKwarran) ? formKwarran : 'CUSTOM'
-                    }
-                    onChange={(e) => {
-                      if (e.target.value !== 'CUSTOM') {
-                        setFormKwarran(e.target.value);
+                {isKwarranRestricted ? (
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-xs font-bold text-amber-900 flex items-center justify-between">
+                    <span>Kwarran {userKwarran}</span>
+                    <span className="text-[10px] text-amber-700 font-normal italic">Terkunci sesuai wilayah kwarran Anda</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <select
+                      value={
+                        DAFTAR_KWARRAN_BANYUMAS.includes(formKwarran) ? formKwarran : 'CUSTOM'
                       }
-                    }}
-                    className="w-full bg-stone-50 border border-stone-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm focus:ring-1 focus:ring-amber-500 font-medium"
-                  >
-                    <option value="">-- Pilih Kwarran di Banyumas --</option>
-                    {DAFTAR_KWARRAN_BANYUMAS.map((kw) => (
-                      <option key={kw} value={kw}>
-                        Kwarran {kw}
-                      </option>
-                    ))}
-                    <option value="CUSTOM">Lainnya / Tulis Manual...</option>
-                  </select>
+                      onChange={(e) => {
+                        if (e.target.value !== 'CUSTOM') {
+                          setFormKwarran(e.target.value);
+                        }
+                      }}
+                      className="w-full bg-stone-50 border border-stone-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm focus:ring-1 focus:ring-amber-500 font-medium"
+                    >
+                      <option value="">-- Pilih Kwarran di Banyumas --</option>
+                      {DAFTAR_KWARRAN_BANYUMAS.map((kw) => (
+                        <option key={kw} value={kw}>
+                          Kwarran {kw}
+                        </option>
+                      ))}
+                      <option value="CUSTOM">Lainnya / Tulis Manual...</option>
+                    </select>
 
-                  <input
-                    type="text"
-                    value={formKwarran}
-                    onChange={(e) => setFormKwarran(e.target.value)}
-                    placeholder="Nama Kwarran (contoh: Kemranjen)"
-                    className="w-full bg-stone-50 border border-stone-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm focus:ring-1 focus:ring-amber-500"
-                  />
-                </div>
+                    <input
+                      type="text"
+                      value={formKwarran}
+                      onChange={(e) => setFormKwarran(e.target.value)}
+                      placeholder="Nama Kwarran (contoh: Kemranjen)"
+                      className="w-full bg-stone-50 border border-stone-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Tempat & Tanggal Lahir (TTL) */}

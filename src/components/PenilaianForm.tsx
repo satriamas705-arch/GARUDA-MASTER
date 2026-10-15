@@ -27,6 +27,7 @@ import {
   AlertTriangle,
   FileText,
   Trash2,
+  MapPin,
 } from 'lucide-react';
 import { exportLembarIndividuToExcel } from '../utils/exportExcel';
 import {
@@ -38,6 +39,7 @@ import {
   getMaxSkorWawancara,
   getAdminTotalCount,
   calculateKelulusanWawancara,
+  isSameKwarran,
 } from '../utils/golongan';
 
 interface PenilaianFormProps {
@@ -75,21 +77,40 @@ export const PenilaianForm: React.FC<PenilaianFormProps> = ({
     extractGolonganName(settings.golongan) ||
     'Penggalang';
 
-  const displayedPeserta = pesertaList.filter(
-    (p) => (p.golongan || 'Penggalang') === effectiveGolongan
-  );
+  // Pembatasan wilayah Kwarran untuk Admin Kwarran & Penguji
+  const isKwarranRestricted =
+    (currentUser?.role === 'admin_kwarran' || currentUser?.role === 'penguji') &&
+    !!currentUser?.kwarran;
+  const userKwarran = currentUser?.kwarran || '';
+
+  const displayedPeserta = pesertaList.filter((p) => {
+    const matchGol = (p.golongan || 'Penggalang') === effectiveGolongan;
+    const matchKw = !isKwarranRestricted || isSameKwarran(p.kwarran, userKwarran);
+    return matchGol && matchKw;
+  });
 
   const currentPeserta =
     displayedPeserta.find((p) => p.id === selectedPesertaId) ||
     displayedPeserta[0] ||
     null;
 
+  useEffect(() => {
+    if (
+      displayedPeserta.length > 0 &&
+      (!selectedPesertaId || !displayedPeserta.some((p) => p.id === selectedPesertaId))
+    ) {
+      onSelectPeserta(displayedPeserta[0].id);
+    }
+  }, [displayedPeserta, selectedPesertaId, onSelectPeserta]);
+
   const existingPenilaian = currentPeserta ? penilaianMap[currentPeserta.id] : undefined;
 
-  // Filter penguji according to effectiveGolongan
-  const availablePenguji = pengujiList.filter(
-    (pj) => !pj.golongan || pj.golongan === effectiveGolongan
-  );
+  // Filter penguji according to effectiveGolongan dan wilayah Kwarran
+  const availablePenguji = pengujiList.filter((pj) => {
+    const matchGol = !pj.golongan || pj.golongan === effectiveGolongan;
+    const matchKw = !isKwarranRestricted || isSameKwarran(pj.kwarran, userKwarran);
+    return matchGol && matchKw;
+  });
 
   // Form states
   const defaultPengujiId =

@@ -45,6 +45,7 @@ export interface Penguji {
   nipNta?: string;
   jabatan: string;
   pangkalan: string;
+  kwarran?: string; // Asal Kwartir Ranting (Kwarran)
   noHp?: string;
   golongan?: 'Penggalang' | 'Siaga' | 'Penegak' | 'Pandega';
 }
@@ -66,12 +67,13 @@ export interface Kelompok {
 
 export type TimPenilai = Kelompok;
 
-export type UserRole = 'admin' | 'penguji';
+export type UserRole = 'admin' | 'admin_kwarran' | 'penguji';
 
 export interface AuthUser {
   role: UserRole;
   username: string;
   displayName: string;
+  kwarran?: string; // Asal Kwarran jika role admin_kwarran atau penguji
   avatarUrl?: string; // URL / path to user profile photo (e.g. /bawor.png for admin)
   pengujiId?: string; // Set when logged in as Penguji
   pengujiData?: Penguji;

@@ -5,6 +5,7 @@ import {
   PenilaianPeserta,
   AppSettings,
   AuthUser,
+  UserRole,
 } from '../types';
 
 export const GOOGLE_DRIVE_FOLDER_ID = '184OdtL5XmCOVYL0IzwNkCelzBnQL8ADm';
@@ -17,7 +18,7 @@ export interface SyncPayload {
   appName: string;
   lastSyncedAt: string;
   syncedBy: {
-    role: 'admin' | 'penguji';
+    role: UserRole;
     username: string;
     displayName: string;
     googleEmail?: string;

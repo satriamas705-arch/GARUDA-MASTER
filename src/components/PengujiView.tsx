@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Penguji, PenilaianPeserta, AuthUser } from '../types';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Penguji, PenilaianPeserta, AuthUser, AppSettings } from '../types';
 import {
   UserCheck,
   Plus,
@@ -11,7 +11,6 @@ import {
   Download,
   Upload,
   FileSpreadsheet,
-  FileUp,
   X,
   Check,
   AlertCircle,
@@ -19,6 +18,15 @@ import {
   RotateCcw,
   AlertTriangle,
   Layers,
+  MapPin,
+  Table as TableIcon,
+  LayoutGrid,
+  Search,
+  Filter,
+  ChevronDown,
+  ChevronUp,
+  Building2,
+  Shield,
 } from 'lucide-react';
 import {
   exportPengujiToExcel,
@@ -26,8 +34,12 @@ import {
   parsePengujiFile,
   ParsePengujiResult,
 } from '../utils/dataIo';
-import { AppSettings } from '../types';
-import { extractGolonganName, GolonganType } from '../utils/golongan';
+import {
+  extractGolonganName,
+  GolonganType,
+  DAFTAR_KWARRAN_BANYUMAS,
+  isSameKwarran,
+} from '../utils/golongan';
 
 interface PengujiViewProps {
   pengujiList: Penguji[];
@@ -60,10 +72,45 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
     extractGolonganName(settings?.golongan) ||
     'Penggalang';
 
-  // Filter Penguji strictly to effectiveGolongan
-  const filteredPengujiList = pengujiList.filter(
-    (p) => (p.golongan || 'Penggalang') === effectiveGolongan
+  // Pembatasan wilayah Kwarran untuk Admin Kwarran & Penguji
+  const isKwarranRestricted =
+    (currentUser?.role === 'admin_kwarran' || currentUser?.role === 'penguji') &&
+    !!currentUser?.kwarran;
+  const userKwarran = currentUser?.kwarran || '';
+
+  // Hak kelola penguji: Super Admin Kwarcab atau Admin Kwarran
+  const isSuperAdmin = currentUser?.role === 'admin';
+  const isAdminKwarran = currentUser?.role === 'admin_kwarran';
+  const canManage = isSuperAdmin || isAdminKwarran;
+
+  // Filter Penguji strictly to effectiveGolongan dan wilayah Kwarran (jika dibatasi)
+  const baseGolonganPenguji = useMemo(() => {
+    return pengujiList.filter(
+      (p) => (p.golongan || 'Penggalang') === effectiveGolongan
+    );
+  }, [pengujiList, effectiveGolongan]);
+
+  const baseScopedPenguji = useMemo(() => {
+    if (isKwarranRestricted) {
+      return baseGolonganPenguji.filter((p) => isSameKwarran(p.kwarran, userKwarran));
+    }
+    return baseGolonganPenguji;
+  }, [baseGolonganPenguji, isKwarranRestricted, userKwarran]);
+
+  // View state & filter
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterKwarran, setFilterKwarran] = useState<string>(
+    isKwarranRestricted ? userKwarran : 'ALL'
   );
+  const [showKwarranTable, setShowKwarranTable] = useState(false);
+
+  // Sync filterKwarran if user is restricted
+  useEffect(() => {
+    if (isKwarranRestricted) {
+      setFilterKwarran(userKwarran);
+    }
+  }, [isKwarranRestricted, userKwarran]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPenguji, setEditingPenguji] = useState<Penguji | null>(null);
@@ -83,14 +130,60 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
   const [importNotification, setImportNotification] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Form states
   const [formNama, setFormNama] = useState('');
   const [formNipNta, setFormNipNta] = useState('');
+  const [formKwarran, setFormKwarran] = useState('');
   const [formJabatan, setFormJabatan] = useState('');
   const [formPangkalan, setFormPangkalan] = useState('');
   const [formHp, setFormHp] = useState('');
   const [formGolongan, setFormGolongan] = useState<GolonganType>(effectiveGolongan);
 
-  const isAdmin = !currentUser || currentUser.role === 'admin';
+  // Daftar unik Kwarran dari data penguji digabung 27 Kwarran Banyumas
+  const uniqueKwarranList = useMemo(() => {
+    const set = new Set<string>();
+    pengujiList.forEach((p) => {
+      if (p.kwarran && p.kwarran.trim()) set.add(p.kwarran.trim());
+    });
+    DAFTAR_KWARRAN_BANYUMAS.forEach((k) => set.add(k));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [pengujiList]);
+
+  // Rekapitulasi Tabel Distribusi Penguji per Kwarran
+  const kwarranDistribution = useMemo(() => {
+    const stats: Record<string, { total: number; aktifMenguji: number; totalDiuji: number }> = {};
+
+    baseGolonganPenguji.forEach((p) => {
+      const kw = p.kwarran?.trim() || 'Lainnya / Belum Diisi';
+      if (!stats[kw]) {
+        stats[kw] = { total: 0, aktifMenguji: 0, totalDiuji: 0 };
+      }
+      stats[kw].total++;
+      const count = Object.values(penilaianMap).filter((pen) => pen.pengujiId === p.id).length;
+      stats[kw].totalDiuji += count;
+      if (count > 0) stats[kw].aktifMenguji++;
+    });
+
+    return Object.entries(stats).sort((a, b) => b[1].total - a[1].total);
+  }, [baseGolonganPenguji, penilaianMap]);
+
+  // Filtered List berdasarkan Search & Kwarran
+  const filteredList = useMemo(() => {
+    return baseScopedPenguji.filter((p) => {
+      const term = searchTerm.toLowerCase();
+      const matchSearch =
+        p.nama.toLowerCase().includes(term) ||
+        (p.nipNta || '').toLowerCase().includes(term) ||
+        (p.pangkalan || '').toLowerCase().includes(term) ||
+        (p.jabatan || '').toLowerCase().includes(term) ||
+        (p.kwarran || '').toLowerCase().includes(term);
+
+      const matchKwarran =
+        filterKwarran === 'ALL' || isSameKwarran(p.kwarran, filterKwarran);
+
+      return matchSearch && matchKwarran;
+    });
+  }, [baseScopedPenguji, searchTerm, filterKwarran]);
 
   const openAddModal = () => {
     setEditingPenguji(null);
@@ -99,6 +192,11 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
     setFormGolongan(effectiveGolongan);
     setFormJabatan(`Tim Penguji Urusan ${effectiveGolongan}`);
     setFormPangkalan(settings?.kwartirCabang || 'Kwarcab Banyumas');
+    setFormKwarran(
+      isAdminKwarran && userKwarran
+        ? userKwarran
+        : settings?.kwarran?.replace(/KWARRAN\s*/i, '').trim() || 'Kemranjen'
+    );
     setFormHp('');
     setIsModalOpen(true);
   };
@@ -109,6 +207,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
     setFormNipNta(p.nipNta || '');
     setFormJabatan(p.jabatan);
     setFormPangkalan(p.pangkalan);
+    setFormKwarran(p.kwarran || 'Kemranjen');
     setFormHp(p.noHp || '');
     setFormGolongan(p.golongan || effectiveGolongan);
     setIsModalOpen(true);
@@ -118,11 +217,14 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
     e.preventDefault();
     if (!formNama.trim()) return;
 
+    const targetKwarran = isAdminKwarran && userKwarran ? userKwarran : formKwarran;
+
     if (editingPenguji) {
       onUpdatePenguji({
         ...editingPenguji,
         nama: formNama,
         nipNta: formNipNta,
+        kwarran: targetKwarran,
         jabatan: formJabatan,
         pangkalan: formPangkalan,
         noHp: formHp,
@@ -133,6 +235,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
         id: `penguji-${Date.now()}`,
         nama: formNama,
         nipNta: formNipNta,
+        kwarran: targetKwarran,
         jabatan: formJabatan,
         pangkalan: formPangkalan,
         noHp: formHp,
@@ -166,14 +269,19 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
   const handleApplyImport = () => {
     if (!parseResult || parseResult.valid.length === 0) return;
 
+    // Jika admin kwarran, pastikan kwarran diset ke kwarran mereka jika kosong
+    const toImport = isAdminKwarran && userKwarran
+      ? parseResult.valid.map((pj) => ({ ...pj, kwarran: pj.kwarran || userKwarran }))
+      : parseResult.valid;
+
     if (onBatchImportPenguji) {
-      onBatchImportPenguji(parseResult.valid, importMode);
+      onBatchImportPenguji(toImport, importMode);
     } else {
-      parseResult.valid.forEach((pj) => onAddPenguji(pj));
+      toImport.forEach((pj) => onAddPenguji(pj));
     }
 
     setImportNotification(
-      `Berhasil mengimpor ${parseResult.valid.length} data penguji (${
+      `Berhasil mengimpor ${toImport.length} data penguji (${
         importMode === 'merge' ? 'Gabung / Perbarui' : 'Ganti Total'
       }).`
     );
@@ -184,8 +292,18 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleExportExcel = () => {
+    exportPengujiToExcel(
+      filteredList,
+      penilaianMap,
+      `Data_Tim_Penguji_${effectiveGolongan}${
+        isKwarranRestricted ? `_${userKwarran}` : ''
+      }.xlsx`
+    );
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Import / Action Notification */}
       {importNotification && (
         <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs sm:text-sm font-semibold flex items-center justify-between shadow-xs animate-in fade-in">
@@ -203,33 +321,90 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
         </div>
       )}
 
+      {/* Kwarran Restriction Notice */}
+      {isKwarranRestricted && (
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-950 flex items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0">
+              <MapPin className="w-4 h-4 text-amber-700" />
+            </div>
+            <div>
+              <div className="text-xs font-black uppercase tracking-wider text-amber-900">
+                Akses Terbatas: Wilayah Kwarran {userKwarran}
+              </div>
+              <p className="text-[11px] text-stone-600 mt-0.5">
+                {currentUser?.role === 'admin_kwarran'
+                  ? 'Sebagai Admin Kwarran, Anda hanya dapat mengakses dan mengelola data penguji dari Kwarran ' + userKwarran + '.'
+                  : 'Sebagai Penguji, Anda hanya dapat melihat data penguji dan peserta di wilayah Kwarran ' + userKwarran + '.'}
+              </p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-amber-600 text-white shrink-0 shadow-xs">
+            Kwarran {userKwarran}
+          </span>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-black text-stone-900 tracking-wide uppercase">
-            Data Tim Penguji - Golongan {effectiveGolongan}
-          </h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-lg font-black text-stone-900 tracking-wide uppercase">
+              Data Tim Penguji - Golongan {effectiveGolongan}
+            </h2>
+            <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+              {filteredList.length} Penguji
+            </span>
+          </div>
           <p className="text-xs text-stone-500 mt-0.5">
-            Daftar penguji resmi, andalan cabang, pelatih, dan penilai wawancara ({settings?.kwartirCabang || 'Kwarcab Banyumas'}) • Total: {filteredPengujiList.length} Penguji Golongan {effectiveGolongan}
+            Daftar penguji resmi, andalan cabang, pelatih pusdiklat, dan penilai wawancara ({settings?.kwartirCabang || 'Kwarcab Banyumas'})
+            {isKwarranRestricted ? ` • Kwarran ${userKwarran}` : ''}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Export / Import Button */}
+          {/* View Mode Toggle */}
+          <div className="flex items-center p-1 rounded-xl bg-stone-100 border border-stone-200">
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                viewMode === 'table'
+                  ? 'bg-white text-stone-900 shadow-xs'
+                  : 'text-stone-500 hover:text-stone-900'
+              }`}
+              title="Tampilkan dalam bentuk Tabel"
+            >
+              <TableIcon className="w-4 h-4 text-amber-600" />
+              <span className="hidden sm:inline">Tabel</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-white text-stone-900 shadow-xs'
+                  : 'text-stone-500 hover:text-stone-900'
+              }`}
+              title="Tampilkan dalam bentuk Kartu / Grid"
+            >
+              <LayoutGrid className="w-4 h-4 text-amber-600" />
+              <span className="hidden sm:inline">Kartu</span>
+            </button>
+          </div>
+
+          {/* Export Button */}
           <button
             type="button"
-            onClick={() => {
-              setIoTab('export');
-              setIsIoModalOpen(true);
-            }}
-            className="px-3.5 py-2.5 bg-stone-100 hover:bg-emerald-50 hover:text-emerald-800 text-stone-700 font-bold text-xs sm:text-sm rounded-xl flex items-center gap-1.5 border border-stone-200 hover:border-emerald-300 transition-all cursor-pointer"
-            title="Ekspor Data Penguji ke Excel"
+            onClick={handleExportExcel}
+            className="px-3.5 py-2 bg-stone-100 hover:bg-emerald-50 hover:text-emerald-800 text-stone-700 font-bold text-xs sm:text-sm rounded-xl flex items-center gap-1.5 border border-stone-200 hover:border-emerald-300 transition-all cursor-pointer"
+            title="Ekspor Data Penguji ke Excel (.xlsx)"
           >
             <Download className="w-4 h-4 text-emerald-600" />
             <span>Ekspor</span>
           </button>
 
-          {isAdmin && (
+          {canManage && (
             <button
               type="button"
               onClick={() => {
@@ -237,7 +412,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
                 setParseResult(null);
                 setIsIoModalOpen(true);
               }}
-              className="px-3.5 py-2.5 bg-stone-100 hover:bg-indigo-50 hover:text-indigo-800 text-stone-700 font-bold text-xs sm:text-sm rounded-xl flex items-center gap-1.5 border border-stone-200 hover:border-indigo-300 transition-all cursor-pointer"
+              className="px-3.5 py-2 bg-stone-100 hover:bg-indigo-50 hover:text-indigo-800 text-stone-700 font-bold text-xs sm:text-sm rounded-xl flex items-center gap-1.5 border border-stone-200 hover:border-indigo-300 transition-all cursor-pointer"
               title="Impor Data Penguji dari Excel / CSV"
             >
               <Upload className="w-4 h-4 text-indigo-600" />
@@ -245,7 +420,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
             </button>
           )}
 
-          {isAdmin && onResetAllPenguji && (
+          {isSuperAdmin && onResetAllPenguji && (
             <button
               type="button"
               onClick={() => {
@@ -253,57 +428,350 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
                 setResetConfirmInput('');
                 setIsResetModalOpen(true);
               }}
-              className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 active:scale-95 text-rose-800 font-bold text-xs sm:text-sm rounded-xl flex items-center gap-1.5 border border-rose-300 transition-all cursor-pointer"
+              className="px-3 py-2 bg-rose-50 hover:bg-rose-100 active:scale-95 text-rose-800 font-bold text-xs rounded-xl flex items-center gap-1.5 border border-rose-300 transition-all cursor-pointer"
               title="Reset Semua Data Penguji"
             >
-              <RotateCcw className="w-4 h-4 text-rose-600" />
-              <span>Reset Semua Penguji</span>
+              <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+              <span className="hidden md:inline">Reset</span>
             </button>
           )}
 
-          {isAdmin && (
+          {canManage && (
             <button
               type="button"
               onClick={openAddModal}
-              className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl flex items-center justify-center gap-2 shadow-md shadow-amber-600/20 transition-all cursor-pointer"
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl flex items-center justify-center gap-2 shadow-md shadow-amber-600/20 transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Tambah Penguji Baru</span>
+              <span>Tambah Penguji</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Golongan Indicator Bar for Penguji */}
-      <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 text-xs text-stone-700 font-bold">
-          <Layers className="w-4 h-4 text-amber-600" />
-          <span>Golongan Penguji:</span>
+      {/* Filter and Search Bar */}
+      <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-stone-200 space-y-3.5">
+        {/* Toggle Tabel Rekapitulasi Kwarran Penguji */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-stone-100">
+          <div className="flex items-center gap-2">
+            <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold text-white ${
+              effectiveGolongan === 'Siaga'
+                ? 'bg-emerald-600'
+                : effectiveGolongan === 'Penggalang'
+                ? 'bg-rose-600'
+                : effectiveGolongan === 'Penegak'
+                ? 'bg-amber-600'
+                : 'bg-stone-700'
+            }`}>
+              Golongan {effectiveGolongan}
+            </span>
+            <span className="text-xs text-stone-500 font-medium">
+              Menampilkan {filteredList.length} dari {baseScopedPenguji.length} penguji
+            </span>
+          </div>
+
+          {!isKwarranRestricted && (
+            <button
+              type="button"
+              onClick={() => setShowKwarranTable(!showKwarranTable)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition-colors cursor-pointer"
+            >
+              <Building2 className="w-3.5 h-3.5 text-amber-700" />
+              <span>Tabel Rekapitulasi Kwarran Penguji</span>
+              {showKwarranTable ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+          )}
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className={`px-3 py-1 rounded-xl text-xs font-bold text-white shadow-xs ${
-            effectiveGolongan === 'Siaga'
-              ? 'bg-emerald-600'
-              : effectiveGolongan === 'Penggalang'
-              ? 'bg-rose-600'
-              : effectiveGolongan === 'Penegak'
-              ? 'bg-amber-600'
-              : 'bg-stone-700'
-          }`}>
-            Khusus Golongan {effectiveGolongan}
-          </span>
-          <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
-            {filteredPengujiList.length} Penguji Terdaftar
-          </span>
+        {/* Collapsible Tabel Rekapitulasi Asal Kwarran Penguji */}
+        {showKwarranTable && !isKwarranRestricted && (
+          <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-3 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-amber-700" />
+                <h4 className="text-xs font-black uppercase tracking-wider text-amber-950">
+                  Tabel Asal Kwarran & Distribusi Penguji ({settings?.kwartirCabang || 'Kwarcab Banyumas'})
+                </h4>
+              </div>
+              <span className="text-[11px] font-bold text-stone-500">
+                Total {kwarranDistribution.length} Kwarran Terdata
+              </span>
+            </div>
+
+            <div className="overflow-x-auto bg-white rounded-xl border border-amber-200 shadow-xs">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-amber-100/70 text-amber-950 font-black border-b border-amber-200">
+                    <th className="py-2 px-3 w-10 text-center">No</th>
+                    <th className="py-2 px-3">Nama Kwartir Ranting (Kwarran)</th>
+                    <th className="py-2 px-3 text-center">Total Penguji</th>
+                    <th className="py-2 px-3 text-center">Aktif Menguji</th>
+                    <th className="py-2 px-3 text-center">Total Peserta Diuji</th>
+                    <th className="py-2 px-3 text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-amber-100/60">
+                  {kwarranDistribution.map(([kw, st], idx) => {
+                    const isSelected = isSameKwarran(filterKwarran, kw);
+                    return (
+                      <tr
+                        key={kw}
+                        className={`hover:bg-amber-50/50 transition-colors ${
+                          isSelected ? 'bg-amber-100/50 font-bold' : ''
+                        }`}
+                      >
+                        <td className="py-2 px-3 text-center text-stone-500 font-mono">{idx + 1}</td>
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-1.5 font-bold text-stone-900">
+                            <MapPin className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Kwarran {kw}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-stone-100 text-stone-800">
+                            {st.total} Penguji
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-800">
+                            {st.aktifMenguji} Aktif
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-200">
+                            {st.totalDiuji} Peserta
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setFilterKwarran(isSelected ? 'ALL' : kw)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-amber-600 text-white'
+                                : 'bg-stone-100 text-stone-700 hover:bg-amber-100 hover:text-amber-900'
+                            }`}
+                          >
+                            {isSelected ? 'Batalkan Filter' : 'Filter Kwarran Ini'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Filter Controls Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+          {/* Search Box */}
+          <div className="sm:col-span-7 md:col-span-8 relative">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Cari penguji (nama, NTA, jabatan, pangkalan, atau kwarran)..."
+              className="w-full pl-9 pr-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Asal Kwarran Dropdown */}
+          <div className="sm:col-span-5 md:col-span-4">
+            <div className="relative">
+              <MapPin className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-amber-600 pointer-events-none" />
+              <select
+                value={filterKwarran}
+                onChange={(e) => setFilterKwarran(e.target.value)}
+                disabled={isKwarranRestricted}
+                className="w-full pl-8 pr-7 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all cursor-pointer disabled:bg-stone-100 disabled:cursor-not-allowed"
+                title={isKwarranRestricted ? 'Terkunci sesuai wilayah kwarran Anda' : 'Filter berdasarkan Kwartir Ranting'}
+              >
+                {!isKwarranRestricted && <option value="ALL">Semua Kwarran ({uniqueKwarranList.length})</option>}
+                {uniqueKwarranList.map((kw) => (
+                  <option key={kw} value={kw}>
+                    Kwarran {kw}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Examiners Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredPengujiList
-          .map((p) => {
-            // Count participants assessed by this examiner
+      {/* Main Content: TABLE VIEW ATAU GRID VIEW */}
+      {viewMode === 'table' ? (
+        /* ================= TABEL DATA PENGUJI ================= */
+        <div className="bg-white rounded-2xl shadow-sm border border-stone-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-stone-50 border-b border-stone-200 text-stone-600 text-[11px] font-black uppercase tracking-wider">
+                  <th className="py-3.5 px-4 w-12 text-center">No</th>
+                  <th className="py-3.5 px-4">Nama Penguji & NTA</th>
+                  <th className="py-3.5 px-4">Asal Kwarran</th>
+                  <th className="py-3.5 px-4">Golongan</th>
+                  <th className="py-3.5 px-4">Jabatan / Unsur</th>
+                  <th className="py-3.5 px-4">Pangkalan / Instansi</th>
+                  <th className="py-3.5 px-4">Kontak (HP/WA)</th>
+                  <th className="py-3.5 px-4 text-center">Peserta Diuji</th>
+                  {canManage && <th className="py-3.5 px-4 text-right">Aksi</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100 text-xs">
+                {filteredList.length === 0 ? (
+                  <tr>
+                    <td colSpan={canManage ? 9 : 8} className="py-12 text-center text-stone-400">
+                      <div className="flex flex-col items-center justify-center space-y-2">
+                        <UserCheck className="w-8 h-8 text-stone-300" />
+                        <p className="font-bold text-stone-600 text-sm">Tidak ada data penguji ditemukan</p>
+                        <p className="text-xs text-stone-400 max-w-sm">
+                          {searchTerm || filterKwarran !== 'ALL'
+                            ? 'Coba ubah kata kunci pencarian atau reset filter Kwarran.'
+                            : 'Belum ada penguji yang terdaftar untuk golongan ini.'}
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredList.map((p, idx) => {
+                    const assessedCount = Object.values(penilaianMap).filter(
+                      (pen) => pen.pengujiId === p.id
+                    ).length;
+
+                    return (
+                      <tr
+                        key={p.id}
+                        className="hover:bg-amber-50/40 transition-colors group"
+                      >
+                        {/* No */}
+                        <td className="py-3 px-4 text-center text-stone-400 font-mono font-medium">
+                          {idx + 1}
+                        </td>
+
+                        {/* Nama & NTA */}
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold shrink-0">
+                              <UserCheck className="w-4 h-4 text-amber-800" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-extrabold text-stone-900 group-hover:text-amber-700 transition-colors">
+                                {p.nama}
+                              </div>
+                              <div className="text-[11px] font-mono text-stone-500">
+                                {p.nipNta || 'NTA belum diset'}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Asal Kwarran (TABEL ASAL KWARRAN PADA DATA PENGUJI) */}
+                        <td className="py-3 px-4">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-900 border border-amber-300 shadow-xs">
+                            <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>{p.kwarran || 'Kemranjen'}</span>
+                          </span>
+                        </td>
+
+                        {/* Golongan */}
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold text-white ${
+                              p.golongan === 'Siaga'
+                                ? 'bg-emerald-600'
+                                : p.golongan === 'Penggalang'
+                                ? 'bg-rose-600'
+                                : p.golongan === 'Penegak'
+                                ? 'bg-amber-600'
+                                : 'bg-stone-600'
+                            }`}
+                          >
+                            {p.golongan || effectiveGolongan}
+                          </span>
+                        </td>
+
+                        {/* Jabatan */}
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-1.5 text-stone-800 font-medium">
+                            <Briefcase className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                            <span className="truncate max-w-[200px]">{p.jabatan}</span>
+                          </div>
+                        </td>
+
+                        {/* Pangkalan / Instansi */}
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-1.5 text-stone-600">
+                            <Award className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                            <span className="truncate max-w-[180px]">{p.pangkalan}</span>
+                          </div>
+                        </td>
+
+                        {/* Kontak */}
+                        <td className="py-3 px-4">
+                          {p.noHp ? (
+                            <div className="flex items-center gap-1 text-stone-600 font-mono text-xs">
+                              <Phone className="w-3 h-3 text-stone-400 shrink-0" />
+                              <span>{p.noHp}</span>
+                            </div>
+                          ) : (
+                            <span className="text-stone-300">-</span>
+                          )}
+                        </td>
+
+                        {/* Peserta Diuji */}
+                        <td className="py-3 px-4 text-center">
+                          <span className="px-2.5 py-0.5 rounded-md text-xs font-extrabold bg-amber-100/80 text-amber-950 border border-amber-300/60">
+                            {assessedCount}
+                          </span>
+                        </td>
+
+                        {/* Aksi */}
+                        {canManage && (
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(p)}
+                                className="p-1.5 hover:bg-stone-100 text-stone-600 hover:text-amber-700 rounded-lg transition-colors cursor-pointer"
+                                title="Edit Penguji"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteCandidate(p)}
+                                className="p-1.5 hover:bg-rose-100 text-stone-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                title="Hapus Penguji"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* ================= GRID VIEW KARTU PENGUJI ================= */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredList.map((p) => {
             const assessedCount = Object.values(penilaianMap).filter(
               (pen) => pen.pengujiId === p.id
             ).length;
@@ -320,9 +788,10 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
                     </div>
 
                     <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                      {isAdmin && (
+                      {canManage && (
                         <>
                           <button
+                            type="button"
                             onClick={() => openEditModal(p)}
                             className="p-1.5 hover:bg-stone-100 text-stone-600 rounded-lg transition-colors"
                             title="Edit Penguji"
@@ -330,6 +799,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
                           <button
+                            type="button"
                             onClick={() => setDeleteCandidate(p)}
                             className="p-1.5 hover:bg-rose-100 text-stone-400 hover:text-rose-600 rounded-lg transition-colors"
                             title="Hapus Penguji"
@@ -345,52 +815,63 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
                     <h3 className="font-extrabold text-stone-900 text-base leading-snug">
                       {p.nama}
                     </h3>
-                    <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span className="text-xs font-mono text-amber-900">
                         {p.nipNta || 'NTA belum diset'}
                       </span>
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold text-white ${
-                        p.golongan === 'Siaga'
-                          ? 'bg-emerald-600'
-                          : p.golongan === 'Penggalang'
-                          ? 'bg-rose-600'
-                          : p.golongan === 'Penegak'
-                          ? 'bg-amber-600'
-                          : 'bg-stone-600'
-                      }`}>
-                        {p.golongan || 'Penggalang'}
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold text-white ${
+                          p.golongan === 'Siaga'
+                            ? 'bg-emerald-600'
+                            : p.golongan === 'Penggalang'
+                            ? 'bg-rose-600'
+                            : p.golongan === 'Penegak'
+                            ? 'bg-amber-600'
+                            : 'bg-stone-600'
+                        }`}
+                      >
+                        {p.golongan || effectiveGolongan}
+                      </span>
+                    </div>
+
+                    {/* Asal Kwarran Badge */}
+                    <div className="mt-2">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-amber-50 text-amber-900 border border-amber-300">
+                        <MapPin className="w-3 h-3 text-amber-600" />
+                        <span>Kwarran {p.kwarran || 'Kemranjen'}</span>
                       </span>
                     </div>
                   </div>
 
-                <div className="mt-3 space-y-1.5 text-xs text-stone-600 border-t border-stone-100 pt-3">
-                  <div className="flex items-center gap-2">
-                    <Briefcase className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                    <span className="font-medium text-stone-800">{p.jabatan}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Award className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                    <span>{p.pangkalan}</span>
-                  </div>
-                  {p.noHp && (
+                  <div className="mt-3 space-y-1.5 text-xs text-stone-600 border-t border-stone-100 pt-3">
                     <div className="flex items-center gap-2">
-                      <Phone className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                      <span>{p.noHp}</span>
+                      <Briefcase className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                      <span className="font-medium text-stone-800">{p.jabatan}</span>
                     </div>
-                  )}
+                    <div className="flex items-center gap-2">
+                      <Award className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                      <span>{p.pangkalan}</span>
+                    </div>
+                    {p.noHp && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                        <span>{p.noHp}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between text-xs">
+                  <span className="text-stone-500">Telah Menguji:</span>
+                  <span className="font-extrabold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                    {assessedCount} Peserta
+                  </span>
                 </div>
               </div>
-
-              <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between text-xs">
-                <span className="text-stone-500">Telah Menguji:</span>
-                <span className="font-extrabold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                  {assessedCount} Peserta
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Modal Add / Edit Penguji */}
       {isModalOpen && (
@@ -428,6 +909,32 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
                 />
               </div>
 
+              {/* ASAL KWARRAN SELECTOR */}
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Asal Kwartir Ranting (Kwarran) *</span>
+                </label>
+                {isAdminKwarran ? (
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-xs font-bold text-amber-900 flex items-center justify-between">
+                    <span>Kwarran {userKwarran}</span>
+                    <span className="text-[10px] text-amber-700 font-normal italic">Terkunci ke Kwarran Anda</span>
+                  </div>
+                ) : (
+                  <select
+                    value={formKwarran}
+                    onChange={(e) => setFormKwarran(e.target.value)}
+                    className="w-full bg-stone-50 border border-stone-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-semibold focus:ring-1 focus:ring-amber-500"
+                  >
+                    {DAFTAR_KWARRAN_BANYUMAS.map((kw) => (
+                      <option key={kw} value={kw}>
+                        Kwarran {kw}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-stone-700 mb-1">
                   Golongan Penguji *
@@ -445,7 +952,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
                       onClick={() => {
                         setFormGolongan(g.id);
                         if (!editingPenguji) {
-                          setFormJabatan(`Andalan Cabang Urusan ${g.id}`);
+                          setFormJabatan(`Tim Penguji Urusan ${g.id}`);
                         }
                       }}
                       className={`py-1.5 px-3 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
@@ -476,7 +983,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-stone-700 mb-1">
-                  Pangkalan / Kwartir
+                  Pangkalan / Instansi
                 </label>
                 <input
                   type="text"
@@ -504,13 +1011,13 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-xs sm:text-sm rounded-xl transition-colors"
+                  className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-xs sm:text-sm rounded-xl transition-colors cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md shadow-amber-600/20 transition-all"
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md shadow-amber-600/20 transition-all cursor-pointer"
                 >
                   {editingPenguji ? 'Simpan Perubahan' : 'Tambahkan Penguji'}
                 </button>
@@ -538,7 +1045,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
               <button
                 type="button"
                 onClick={() => setDeleteCandidate(null)}
-                className="flex-1 px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold rounded-xl transition-colors"
+                className="flex-1 px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
               >
                 Batal
               </button>
@@ -548,7 +1055,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
                   onDeletePenguji(deleteCandidate.id);
                   setDeleteCandidate(null);
                 }}
-                className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-md shadow-rose-600/25 transition-all"
+                className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-md shadow-rose-600/25 transition-all cursor-pointer"
               >
                 Ya, Hapus
               </button>
@@ -590,7 +1097,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
 
             {/* Modal Tabs */}
             <div className="grid grid-cols-2 p-1 rounded-xl bg-stone-100 border border-stone-200 mt-4 mb-4 shrink-0">
-              {isAdmin && (
+              {canManage && (
                 <button
                   type="button"
                   onClick={() => setIoTab('import')}
@@ -608,7 +1115,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
                 type="button"
                 onClick={() => setIoTab('export')}
                 className={`py-2 px-3 text-xs sm:text-sm font-black rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  ioTab === 'export' || !isAdmin
+                  ioTab === 'export' || !canManage
                     ? 'bg-amber-600 text-white shadow-sm'
                     : 'text-stone-600 hover:text-stone-900'
                 }`}
@@ -620,7 +1127,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
 
             {/* Modal Tab Content */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-              {ioTab === 'import' && isAdmin ? (
+              {ioTab === 'import' && canManage ? (
                 <div className="space-y-4">
                   {/* Template download notice */}
                   <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -630,7 +1137,7 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
                         <span>Unduh Format Template Penguji</span>
                       </div>
                       <p className="text-[11px] text-stone-600 mt-0.5">
-                        Susunan kolom: Nama Penguji, NTA/NIP, Jabatan, Pangkalan/Instansi, No HP/WhatsApp.
+                        Susunan kolom: Nama Penguji, NTA/NIP, Golongan, Asal Kwarran, Jabatan, Pangkalan, No HP.
                       </p>
                     </div>
 
@@ -650,313 +1157,185 @@ export const PengujiView: React.FC<PengujiViewProps> = ({
                     className="border-2 border-dashed border-stone-300 hover:border-amber-500 rounded-2xl p-6 text-center cursor-pointer transition-colors bg-stone-50/50 hover:bg-amber-50/30"
                   >
                     <input
-                      type="file"
                       ref={fileInputRef}
+                      type="file"
+                      accept=".xlsx, .xls, .csv"
                       onChange={handleFileChange}
-                      accept=".xlsx,.xls,.csv"
                       className="hidden"
                     />
-                    <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto mb-2">
-                      <FileUp className="w-6 h-6" />
-                    </div>
-                    <div className="font-bold text-sm text-stone-800">
-                      Klik untuk memilih berkas Excel atau CSV penguji
-                    </div>
-                    <div className="text-xs text-stone-500 mt-1">
+                    <Upload className="w-8 h-8 text-amber-600 mx-auto mb-2" />
+                    <p className="text-xs sm:text-sm font-bold text-stone-700">
+                      Klik untuk memilih berkas Excel atau CSV
+                    </p>
+                    <p className="text-[11px] text-stone-400 mt-1">
                       Mendukung format .xlsx, .xls, dan .csv
-                    </div>
+                    </p>
                   </div>
 
                   {isParsing && (
-                    <div className="p-4 rounded-xl bg-stone-100 text-center text-xs font-semibold text-stone-600 animate-pulse">
-                      Membaca data berkas penguji...
+                    <div className="text-center py-4 text-xs font-semibold text-stone-500 animate-pulse">
+                      Sedang memproses dan memvalidasi berkas...
                     </div>
                   )}
 
                   {/* Parse Results Preview */}
                   {parseResult && (
                     <div className="space-y-3 pt-2">
-                      <div className="flex items-center justify-between text-xs font-bold">
-                        <span className="text-stone-700">
-                          Pratinjau Data ({parseResult.valid.length} Penguji Terbaca)
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-stone-700">
+                          Pratinjau Data Impor ({parseResult.valid.length} data valid)
                         </span>
-                        <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                          Siap Diimpor
-                        </span>
+                        {parseResult.errors.length > 0 && (
+                          <span className="text-xs font-bold text-rose-600">
+                            {parseResult.errors.length} peringatan
+                          </span>
+                        )}
                       </div>
 
-                      {parseResult.errors.length > 0 && (
-                        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs space-y-1">
-                          <div className="font-bold flex items-center gap-1 text-rose-900">
-                            <AlertCircle className="w-3.5 h-3.5" />
-                            <span>Peringatan / Catatan Baris:</span>
-                          </div>
-                          <ul className="list-disc list-inside text-[11px] space-y-0.5 max-h-24 overflow-y-auto">
-                            {parseResult.errors.map((err, i) => (
-                              <li key={i}>{err}</li>
-                            ))}
-                          </ul>
+                      {parseResult.valid.length > 0 && (
+                        <div className="max-h-48 overflow-y-auto border border-stone-200 rounded-xl divide-y divide-stone-100 text-xs">
+                          {parseResult.valid.slice(0, 10).map((p, i) => (
+                            <div key={i} className="p-2.5 flex items-center justify-between hover:bg-stone-50">
+                              <div>
+                                <div className="font-bold text-stone-900">{p.nama}</div>
+                                <div className="text-[11px] text-stone-500 flex items-center gap-2">
+                                  <span>{p.nipNta || '-'}</span>
+                                  <span>•</span>
+                                  <span>Kwarran {p.kwarran || 'Kemranjen'}</span>
+                                  <span>•</span>
+                                  <span>{p.jabatan}</span>
+                                </div>
+                              </div>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900">
+                                {p.golongan || effectiveGolongan}
+                              </span>
+                            </div>
+                          ))}
+                          {parseResult.valid.length > 10 && (
+                            <div className="p-2 text-center text-[11px] text-stone-400 font-medium">
+                              ...dan {parseResult.valid.length - 10} data lainnya
+                            </div>
+                          )}
                         </div>
                       )}
 
-                      {/* Preview Table */}
-                      <div className="max-h-48 overflow-y-auto border border-stone-200 rounded-xl">
-                        <table className="w-full text-left text-[11px] border-collapse">
-                          <thead className="bg-stone-100 text-stone-700 sticky top-0">
-                            <tr>
-                              <th className="py-2 px-2.5">NO</th>
-                              <th className="py-2 px-2.5">NAMA PENGUJI</th>
-                              <th className="py-2 px-2.5">NTA / NIP</th>
-                              <th className="py-2 px-2.5">JABATAN</th>
-                              <th className="py-2 px-2.5">PANGKALAN</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-stone-100">
-                            {parseResult.valid.slice(0, 8).map((pj, idx) => (
-                              <tr key={pj.id} className="hover:bg-amber-50/20">
-                                <td className="py-1.5 px-2.5 text-stone-500">{idx + 1}</td>
-                                <td className="py-1.5 px-2.5 font-bold text-stone-900">{pj.nama}</td>
-                                <td className="py-1.5 px-2.5 font-mono text-amber-900">
-                                  {pj.nipNta || '-'}
-                                </td>
-                                <td className="py-1.5 px-2.5 text-stone-700">{pj.jabatan}</td>
-                                <td className="py-1.5 px-2.5 text-stone-600">{pj.pangkalan}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Import Mode Selector */}
-                      <div className="p-3 rounded-xl bg-stone-50 border border-stone-200 space-y-2">
-                        <div className="text-xs font-bold text-stone-700">Pilih Mode Impor:</div>
-                        <div className="space-y-1.5">
-                          <label className="flex items-center gap-2 text-xs text-stone-800 cursor-pointer">
+                      {/* Import Mode Selection */}
+                      <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2">
+                        <span className="text-xs font-bold text-stone-800">Mode Penyimpanan:</span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer ${
+                            importMode === 'merge'
+                              ? 'bg-white border-amber-600 text-amber-900 font-bold shadow-xs'
+                              : 'bg-white/60 border-stone-200 text-stone-600'
+                          }`}>
                             <input
                               type="radio"
-                              name="pengujiImportMode"
+                              name="importMode"
                               checked={importMode === 'merge'}
                               onChange={() => setImportMode('merge')}
-                              className="text-amber-600 focus:ring-amber-500"
+                              className="text-amber-600"
                             />
-                            <span>
-                              <strong>Gabungkan &amp; Perbarui (Merge)</strong> — Tambahkan ke data yang ada dan perbarui bila ada penguji yang cocok.
-                            </span>
+                            <span>Gabung / Perbarui (Merge)</span>
                           </label>
-                          <label className="flex items-center gap-2 text-xs text-stone-800 cursor-pointer">
+                          <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer ${
+                            importMode === 'replace'
+                              ? 'bg-white border-rose-600 text-rose-900 font-bold shadow-xs'
+                              : 'bg-white/60 border-stone-200 text-stone-600'
+                          }`}>
                             <input
                               type="radio"
-                              name="pengujiImportMode"
+                              name="importMode"
                               checked={importMode === 'replace'}
                               onChange={() => setImportMode('replace')}
-                              className="text-amber-600 focus:ring-amber-500"
+                              className="text-rose-600"
                             />
-                            <span>
-                              <strong>Ganti Total (Replace All)</strong> — Hapus daftar penguji lama dan gunakan data berkas ini.
-                            </span>
+                            <span>Ganti Total (Replace)</span>
                           </label>
                         </div>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={handleApplyImport}
+                        disabled={parseResult.valid.length === 0}
+                        className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer"
+                      >
+                        Terapkan Impor ({parseResult.valid.length} Penguji)
+                      </button>
                     </div>
                   )}
                 </div>
               ) : (
-                /* Export Tab */
+                /* EXPORT CONTENT */
                 <div className="space-y-4">
                   <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
-                    <div className="font-extrabold text-sm text-stone-900">
-                      Ekspor Data Tim Penguji Pramuka Garuda
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                      <h4 className="text-xs font-black uppercase text-stone-800">
+                        Ekspor Data Penguji ({filteredList.length} Baris)
+                      </h4>
                     </div>
                     <p className="text-xs text-stone-600 leading-relaxed">
-                      Unduh berkas spreadsheet data tim penguji resmi lengkap dengan nomor NTA/NIP, jabatan kepramukaan, instansi pangkalan, nomor kontak, serta total rekap peserta yang telah dinilai.
+                      Unduh daftar penguji golongan <strong>{effectiveGolongan}</strong>
+                      {isKwarranRestricted ? ` wilayah Kwarran ${userKwarran}` : ''} dalam format Microsoft Excel (.xlsx) resmi dengan data nomor NTA, Asal Kwarran, jabatan, instansi, kontak, serta rekap jumlah peserta yang telah diuji.
                     </p>
 
-                    <div className="p-3 rounded-xl bg-white border border-stone-200 text-center max-w-xs mx-auto">
-                      <div className="text-2xl font-black text-amber-700">{pengujiList.length}</div>
-                      <div className="text-[11px] text-stone-500 font-bold uppercase mt-0.5">
-                        Total Penguji Terdaftar
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2">
                     <button
                       type="button"
-                      onClick={() => exportPengujiToExcel(pengujiList, penilaianMap)}
-                      className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-black text-xs sm:text-sm rounded-xl flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                      onClick={handleExportExcel}
+                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
                       <Download className="w-4 h-4" />
-                      <span>Unduh Data Penguji ke Excel (.xlsx)</span>
-                    </button>
-                  </div>
-
-                  <div className="pt-2 text-center">
-                    <button
-                      type="button"
-                      onClick={downloadPengujiTemplate}
-                      className="text-xs font-bold text-amber-700 hover:text-amber-900 flex items-center justify-center gap-1 mx-auto"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Unduh Format Template Kosong Penguji (.xlsx)</span>
+                      <span>Unduh Berkas Excel (.xlsx)</span>
                     </button>
                   </div>
                 </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="pt-4 border-t border-stone-100 flex items-center justify-end gap-2 mt-4 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsIoModalOpen(false);
-                  setParseResult(null);
-                }}
-                className="px-4 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs sm:text-sm rounded-xl transition-colors cursor-pointer"
-              >
-                Tutup
-              </button>
-
-              {ioTab === 'import' && isAdmin && parseResult && parseResult.valid.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleApplyImport}
-                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-black text-xs sm:text-sm rounded-xl shadow-md shadow-amber-600/25 transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Terapkan Impor ({parseResult.valid.length} Penguji)</span>
-                </button>
               )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ========================================================
-       * MODAL RESET SEMUA PENGUJI
-       * ======================================================== */}
+      {/* Reset Modal */}
       {isResetModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-rose-300">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-stone-900">
-                  Reset Semua Data Penguji
-                </h3>
-                <p className="text-xs text-stone-500">
-                  Kelola dan bersihkan data tim penguji yang terdaftar
-                </p>
-              </div>
+        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-stone-200 animate-in fade-in zoom-in-95">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
+              <AlertTriangle className="w-6 h-6" />
             </div>
+            <h3 className="text-base font-black text-center text-stone-900">
+              Reset Data Penguji?
+            </h3>
+            <p className="text-xs text-stone-600 text-center mt-1">
+              Ketik kata <span className="font-mono font-bold text-rose-600">RESET</span> di bawah untuk mengonfirmasi:
+            </p>
 
-            <div className="space-y-3 mt-4">
-              <label className="text-xs font-bold text-stone-700 uppercase tracking-wider block">
-                Pilih Mode Reset:
-              </label>
+            <input
+              type="text"
+              value={resetConfirmInput}
+              onChange={(e) => setResetConfirmInput(e.target.value)}
+              placeholder="Ketik RESET"
+              className="w-full mt-3 px-3 py-2 border border-stone-300 rounded-xl text-center font-mono text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+            />
 
-              <div
-                onClick={() => setResetPengujiMode('empty')}
-                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
-                  resetPengujiMode === 'empty'
-                    ? 'border-rose-500 bg-rose-50/70 text-rose-950'
-                    : 'border-stone-200 hover:border-stone-300 bg-white'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="font-extrabold text-sm text-rose-900">
-                    1. Kosongkan Total (0 Penguji)
-                  </div>
-                  <input
-                    type="radio"
-                    name="resetPengujiMode"
-                    checked={resetPengujiMode === 'empty'}
-                    onChange={() => setResetPengujiMode('empty')}
-                    className="accent-rose-600"
-                  />
-                </div>
-                <p className="text-xs text-stone-600 mt-1">
-                  Hapus <strong>seluruh penguji ({pengujiList.length} penguji)</strong> dari sistem. Cocok untuk mendaftarkan susunan tim penilai baru.
-                </p>
-              </div>
-
-              <div
-                onClick={() => setResetPengujiMode('default')}
-                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
-                  resetPengujiMode === 'default'
-                    ? 'border-amber-600 bg-amber-50/70 text-amber-950'
-                    : 'border-stone-200 hover:border-stone-300 bg-white'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="font-extrabold text-sm text-amber-900">
-                    2. Kembalikan ke Contoh Data Bawaan
-                  </div>
-                  <input
-                    type="radio"
-                    name="resetPengujiMode"
-                    checked={resetPengujiMode === 'default'}
-                    onChange={() => setResetPengujiMode('default')}
-                    className="accent-amber-600"
-                  />
-                </div>
-                <p className="text-xs text-stone-600 mt-1">
-                  Mengembalikan data penguji ke contoh bawaan resmi Kwartir Cabang Banyumas.
-                </p>
-              </div>
-            </div>
-
-            {resetPengujiMode === 'empty' && (
-              <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">
-                <span className="font-bold block mb-1">Konfirmasi Keamanan:</span>
-                Ketik kata <span className="font-black underline text-rose-950">RESET</span> di bawah untuk konfirmasi pengosongan penguji:
-                <input
-                  type="text"
-                  value={resetConfirmInput}
-                  onChange={(e) => setResetConfirmInput(e.target.value)}
-                  placeholder="Ketik RESET di sini..."
-                  className="mt-2 w-full px-3 py-1.5 bg-white border border-rose-300 rounded-lg text-xs font-mono font-bold text-stone-900 uppercase focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2.5 mt-6 pt-3 border-t border-stone-100">
+            <div className="mt-4 flex items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => setIsResetModalOpen(false)}
-                className="px-4 py-2 text-xs font-bold text-stone-600 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
+                className="flex-1 px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
               >
                 Batal
               </button>
               <button
                 type="button"
-                disabled={resetPengujiMode === 'empty' && resetConfirmInput.trim().toUpperCase() !== 'RESET'}
+                disabled={resetConfirmInput !== 'RESET'}
                 onClick={() => {
-                  if (onResetAllPenguji) {
-                    onResetAllPenguji(resetPengujiMode);
-                    setImportNotification(
-                      resetPengujiMode === 'empty'
-                        ? 'Semua data penguji telah berhasil dikosongkan.'
-                        : 'Data penguji berhasil dikembalikan ke contoh bawaan.'
-                    );
-                    setTimeout(() => setImportNotification(null), 4000);
-                  }
+                  if (onResetAllPenguji) onResetAllPenguji(resetPengujiMode);
                   setIsResetModalOpen(false);
                 }}
-                className={`px-5 py-2 text-xs font-black rounded-xl transition-all flex items-center gap-1.5 ${
-                  resetPengujiMode === 'empty'
-                    ? resetConfirmInput.trim().toUpperCase() === 'RESET'
-                      ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-600/25 active:scale-95 cursor-pointer'
-                      : 'bg-stone-200 text-stone-400 cursor-not-allowed'
-                    : 'bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-600/25 active:scale-95 cursor-pointer'
-                }`}
+                className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white text-xs font-black rounded-xl shadow-md transition-all cursor-pointer"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>
-                  {resetPengujiMode === 'empty' ? 'Kosongkan Semua Penguji' : 'Reset ke Contoh Bawaan'}
-                </span>
+                Konfirmasi
               </button>
             </div>
           </div>

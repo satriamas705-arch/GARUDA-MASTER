@@ -1,4 +1,5 @@
 import { AuthUser, Penguji } from '../types';
+import { DAFTAR_KWARRAN_BANYUMAS } from './golongan';
 
 const AUTH_STORAGE_KEY = 'pg_banyumas_auth_user_v1';
 
@@ -61,11 +62,188 @@ export interface LoginResult {
   error?: string;
 }
 
+const PASSWORDS_STORAGE_KEY = 'pg_banyumas_custom_passwords_v2';
+
+export interface CustomPasswords {
+  adminKwarcab?: string; // default: "admin"
+  adminKwarran?: Record<string, string>; // kwarran normalized -> custom password
+  penguji?: Record<string, string>; // pengujiId -> custom password
+}
+
+export function loadCustomPasswords(): CustomPasswords {
+  try {
+    const raw = localStorage.getItem(PASSWORDS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        adminKwarcab: parsed.adminKwarcab,
+        adminKwarran: parsed.adminKwarran || {},
+        penguji: parsed.penguji || {},
+      };
+    }
+  } catch (err) {
+    console.error('Failed to load custom passwords', err);
+  }
+  return { adminKwarran: {}, penguji: {} };
+}
+
+export function saveCustomPasswords(passwords: CustomPasswords): void {
+  try {
+    localStorage.setItem(PASSWORDS_STORAGE_KEY, JSON.stringify(passwords));
+  } catch (err) {
+    console.error('Failed to save custom passwords', err);
+  }
+}
+
+/**
+ * Cek apakah user saat ini sedang menggunakan password custom
+ */
+export function hasCustomPassword(user: AuthUser): boolean {
+  const custom = loadCustomPasswords();
+  if (user.role === 'admin') {
+    return Boolean(custom.adminKwarcab);
+  }
+  if (user.role === 'admin_kwarran' && user.kwarran) {
+    const kwKey = cleanString(user.kwarran);
+    return Boolean(custom.adminKwarran?.[kwKey]);
+  }
+  if (user.role === 'penguji' && user.pengujiId) {
+    return Boolean(custom.penguji?.[user.pengujiId]);
+  }
+  return false;
+}
+
+/**
+ * Ubah password untuk user yang sedang aktif (Admin Kwarcab, Admin Kwarran, atau Penguji)
+ */
+export function changeUserPassword(
+  user: AuthUser,
+  oldPasswordInput: string,
+  newPasswordInput: string,
+  pengujiList: Penguji[]
+): { success: boolean; error?: string } {
+  const oldPass = oldPasswordInput.trim();
+  const newPass = newPasswordInput.trim();
+
+  if (!oldPass) {
+    return { success: false, error: 'Password lama / saat ini wajib diisi.' };
+  }
+  if (!newPass) {
+    return { success: false, error: 'Password baru wajib diisi.' };
+  }
+  if (newPass.length < 4) {
+    return { success: false, error: 'Password baru minimal harus 4 karakter.' };
+  }
+
+  const custom = loadCustomPasswords();
+
+  // 1. Admin Kwarcab
+  if (user.role === 'admin') {
+    const currentExpected = custom.adminKwarcab || 'admin';
+    if (oldPass !== currentExpected) {
+      return { success: false, error: 'Password lama tidak sesuai.' };
+    }
+    custom.adminKwarcab = newPass;
+    saveCustomPasswords(custom);
+    return { success: true };
+  }
+
+  // 2. Admin Kwarran
+  if (user.role === 'admin_kwarran') {
+    const kwKey = cleanString(user.kwarran || '');
+    const currentExpected = custom.adminKwarran?.[kwKey] || kwKey;
+    const isOldMatch =
+      oldPass === currentExpected || cleanString(oldPass) === kwKey;
+    if (!isOldMatch) {
+      return { success: false, error: 'Password lama tidak sesuai.' };
+    }
+    if (!custom.adminKwarran) custom.adminKwarran = {};
+    custom.adminKwarran[kwKey] = newPass;
+    saveCustomPasswords(custom);
+    return { success: true };
+  }
+
+  // 3. Penguji
+  if (user.role === 'penguji') {
+    const pengujiId = user.pengujiId;
+    const currentCustom = pengujiId ? custom.penguji?.[pengujiId] : undefined;
+    let isOldValid = false;
+
+    if (currentCustom) {
+      isOldValid = oldPass === currentCustom;
+    } else {
+      // Bandingkan dengan variasi nama penguji
+      const pData =
+        user.pengujiData || pengujiList.find((p) => p.id === user.pengujiId);
+      const candidates = getPengujiPasswordCandidates(
+        pData?.nama || user.displayName
+      );
+      isOldValid = candidates.includes(cleanString(oldPass));
+    }
+
+    if (!isOldValid) {
+      return { success: false, error: 'Password lama tidak sesuai.' };
+    }
+
+    if (!pengujiId) {
+      return {
+        success: false,
+        error: 'Identitas penguji tidak ditemukan dalam sesi.',
+      };
+    }
+
+    if (!custom.penguji) custom.penguji = {};
+    custom.penguji[pengujiId] = newPass;
+    saveCustomPasswords(custom);
+    return { success: true };
+  }
+
+  return { success: false, error: 'Role pengguna tidak dikenali.' };
+}
+
+/**
+ * Kembalikan password ke default awal
+ */
+export function resetUserPasswordToDefault(user: AuthUser): {
+  success: boolean;
+  message: string;
+} {
+  const custom = loadCustomPasswords();
+  if (user.role === 'admin') {
+    delete custom.adminKwarcab;
+    saveCustomPasswords(custom);
+    return { success: true, message: 'Password Admin Kwarcab direset ke default ("admin").' };
+  }
+  if (user.role === 'admin_kwarran' && user.kwarran) {
+    const kwKey = cleanString(user.kwarran);
+    if (custom.adminKwarran) {
+      delete custom.adminKwarran[kwKey];
+      saveCustomPasswords(custom);
+    }
+    return {
+      success: true,
+      message: `Password Admin Kwarran ${user.kwarran} direset ke default (nama kwarran).`,
+    };
+  }
+  if (user.role === 'penguji' && user.pengujiId) {
+    if (custom.penguji) {
+      delete custom.penguji[user.pengujiId];
+      saveCustomPasswords(custom);
+    }
+    return {
+      success: true,
+      message: 'Password penguji direset ke default (nama penguji).',
+    };
+  }
+  return { success: false, message: 'Gagal mereset password.' };
+}
+
 export function attemptLogin(
   usernameInput: string,
   passwordInput: string,
   pengujiList: Penguji[],
-  selectedGolongan?: 'Siaga' | 'Penggalang' | 'Penegak' | 'Pandega'
+  selectedGolongan?: 'Siaga' | 'Penggalang' | 'Penegak' | 'Pandega',
+  targetKwarran?: string
 ): LoginResult {
   const username = usernameInput.trim().toLowerCase();
   const password = passwordInput.trim();
@@ -79,9 +257,13 @@ export function attemptLogin(
     return { success: false, error: 'Password wajib diisi.' };
   }
 
-  // ================= 1. ADMIN LOGIN =================
+  const custom = loadCustomPasswords();
+
+  // ================= 1. ADMIN (KWARCAB ATAU KWARRAN) =================
   if (username === 'admin') {
-    if (password === 'admin') {
+    // 1a. Super Admin Kwarcab (password custom atau default: "admin")
+    const adminExpected = custom.adminKwarcab || 'admin';
+    if (password === adminExpected) {
       return {
         success: true,
         user: {
@@ -93,24 +275,82 @@ export function attemptLogin(
         },
       };
     }
+
+    // 1b. Jika targetKwarran diberikan secara spesifik (misal dipilih dari tab/dropdown)
+    if (targetKwarran) {
+      const kwKey = cleanString(targetKwarran);
+      const customKwPass = custom.adminKwarran?.[kwKey];
+      const isKwMatch =
+        (customKwPass && password === customKwPass) ||
+        passwordClean === kwKey ||
+        passwordClean === kwKey.replace(/^kwarran/, '');
+
+      if (isKwMatch) {
+        return {
+          success: true,
+          user: {
+            role: 'admin_kwarran',
+            username: 'admin',
+            displayName: `Admin Kwarran ${targetKwarran}`,
+            kwarran: targetKwarran,
+            avatarUrl: '/bawor.png',
+            selectedGolongan: selectedGolongan || undefined,
+          },
+        };
+      }
+    }
+
+    // 1c. Cek semua Kwarran di Kabupaten Banyumas (custom password atau nama kwarran)
+    for (const kw of DAFTAR_KWARRAN_BANYUMAS) {
+      const kwKey = cleanString(kw);
+      const customKwPass = custom.adminKwarran?.[kwKey];
+
+      const isMatch =
+        (customKwPass && password === customKwPass) ||
+        passwordClean === kwKey ||
+        passwordClean === kwKey.replace(/^kwarran/, '');
+
+      if (isMatch) {
+        return {
+          success: true,
+          user: {
+            role: 'admin_kwarran',
+            username: 'admin',
+            displayName: `Admin Kwarran ${kw}`,
+            kwarran: kw,
+            avatarUrl: '/bawor.png',
+            selectedGolongan: selectedGolongan || undefined,
+          },
+        };
+      }
+    }
+
     return {
       success: false,
-      error: 'Password admin salah. Gunakan password: admin',
+      error:
+        'Password salah. Silakan periksa kembali password Anda.',
     };
   }
 
   // ================= 2. PENGUJI LOGIN =================
   if (username === 'penguji') {
-    // Check if passwordClean matches any of the registered penguji candidates
+    // Check if password matches custom password or candidate names
     for (const penguji of pengujiList) {
+      const customPengujiPass = custom.penguji?.[penguji.id];
       const candidates = getPengujiPasswordCandidates(penguji.nama);
-      if (candidates.includes(passwordClean)) {
+
+      const isMatch =
+        (customPengujiPass && password === customPengujiPass) ||
+        candidates.includes(passwordClean);
+
+      if (isMatch) {
         return {
           success: true,
           user: {
             role: 'penguji',
             username: 'penguji',
             displayName: penguji.nama,
+            kwarran: penguji.kwarran || 'Kemranjen',
             pengujiId: penguji.id,
             pengujiData: penguji,
             selectedGolongan:
@@ -123,7 +363,7 @@ export function attemptLogin(
     return {
       success: false,
       error:
-        'Password penguji tidak cocok dengan nama penguji yang terdaftar. Masukkan nama penguji dengan huruf kecil dan disambung (contoh: sugengpriyono).',
+        'Password penguji tidak cocok. Masukkan password akun atau nama penguji yang terdaftar.',
     };
   }
 
@@ -138,7 +378,7 @@ export function loadCurrentAuthUser(): AuthUser | null {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
     if (raw) {
       const user = JSON.parse(raw) as AuthUser;
-      if (user.role === 'admin' && !user.avatarUrl) {
+      if ((user.role === 'admin' || user.role === 'admin_kwarran') && !user.avatarUrl) {
         user.avatarUrl = '/bawor.png';
       }
       return user;

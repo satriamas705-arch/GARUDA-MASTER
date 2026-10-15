@@ -87,6 +87,7 @@ export function loadPenguji(): Penguji[] {
           return {
             ...item,
             golongan: item.golongan || init?.golongan || 'Penggalang',
+            kwarran: item.kwarran || init?.kwarran || 'Kemranjen',
           };
         });
       }

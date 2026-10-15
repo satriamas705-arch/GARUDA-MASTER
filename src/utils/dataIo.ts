@@ -428,6 +428,8 @@ export const PENGUJI_EXCEL_HEADERS = [
   'NO',
   'NAMA PENGUJI',
   'NTA / NIP',
+  'GOLONGAN',
+  'ASAL KWARRAN',
   'JABATAN',
   'PANGKALAN / INSTANSI',
   'NO. HP / WHATSAPP',
@@ -437,20 +439,41 @@ export function downloadPengujiTemplate() {
   const wb = XLSX.utils.book_new();
 
   const data = [
-    ['NAMA PENGUJI', 'NTA / NIP', 'JABATAN', 'PANGKALAN / INSTANSI', 'NO. HP / WHATSAPP'],
+    [
+      'NAMA PENGUJI',
+      'NTA / NIP',
+      'GOLONGAN',
+      'ASAL KWARRAN',
+      'JABATAN',
+      'PANGKALAN / INSTANSI',
+      'NO. HP / WHATSAPP',
+    ],
     [
       'Kak Sugeng Priyono, S.Pd., M.Si.',
       'NTA. 11.02.00.001',
+      'Penggalang',
+      'Kemranjen',
       'Andalan Cabang Urusan Penggalang',
       'Kwarcab Banyumas',
       '081234567890',
     ],
     [
-      'Kak Tri Wahyuni, M.Pd.',
-      'NTA. 11.02.00.002',
+      'Kak Siti Nurjanah, M.Pd.',
+      'NTA. 11.02.00.008',
+      'Penggalang',
+      'Purwokerto Timur',
       'Pelatih Pusdiklatcab',
-      'Kwarcab Banyumas',
-      '081345678901',
+      'SMP Negeri 1 Purwokerto',
+      '081398765432',
+    ],
+    [
+      'Kak Tri Wahyuni, S.Pd.SD',
+      'NTA. 11.02.00.022',
+      'Siaga',
+      'Kemranjen',
+      'Andalan Ranting Urusan Siaga',
+      'Kwarran Kemranjen',
+      '081544332211',
     ],
   ];
 
@@ -458,8 +481,10 @@ export function downloadPengujiTemplate() {
   ws['!cols'] = [
     { wch: 32 }, // Nama
     { wch: 20 }, // NTA
+    { wch: 16 }, // Golongan
+    { wch: 20 }, // Asal Kwarran
     { wch: 34 }, // Jabatan
-    { wch: 24 }, // Pangkalan
+    { wch: 26 }, // Pangkalan
     { wch: 18 }, // HP
   ];
 
@@ -478,6 +503,8 @@ export function exportPengujiToExcel(
     'NO',
     'NAMA PENGUJI',
     'NTA / NIP',
+    'GOLONGAN',
+    'ASAL KWARRAN',
     'JABATAN',
     'PANGKALAN / INSTANSI',
     'NO. HP / WHATSAPP',
@@ -494,6 +521,8 @@ export function exportPengujiToExcel(
       idx + 1,
       pj.nama,
       pj.nipNta || '-',
+      pj.golongan || 'Penggalang',
+      pj.kwarran || '-',
       pj.jabatan,
       pj.pangkalan,
       pj.noHp || '-',
@@ -506,8 +535,10 @@ export function exportPengujiToExcel(
     { wch: 5 },
     { wch: 32 },
     { wch: 20 },
+    { wch: 16 },
+    { wch: 20 },
     { wch: 34 },
-    { wch: 24 },
+    { wch: 26 },
     { wch: 18 },
     { wch: 22 },
   ];
@@ -560,6 +591,23 @@ export async function parsePengujiFile(file: File): Promise<ParsePengujiResult> 
       `NTA. 11.02.00.${(idx + 1).toString().padStart(3, '0')}`
     ).toString().trim();
 
+    const kwarran = (
+      normalizedRow['asalkwarran'] ||
+      normalizedRow['kwarran'] ||
+      normalizedRow['ranting'] ||
+      normalizedRow['kwartirranting'] ||
+      ''
+    ).toString().trim();
+
+    const golonganRaw = (
+      normalizedRow['golongan'] ||
+      'Penggalang'
+    ).toString().trim();
+    const validGolongan: Penguji['golongan'] =
+      ['Penggalang', 'Siaga', 'Penegak', 'Pandega'].find(
+        (g) => g.toLowerCase() === golonganRaw.toLowerCase()
+      ) as any || 'Penggalang';
+
     const jabatan = (
       normalizedRow['jabatan'] ||
       'Penguji Penilaian Pramuka Garuda'
@@ -585,6 +633,8 @@ export async function parsePengujiFile(file: File): Promise<ParsePengujiResult> 
       id: `penguji-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
       nama,
       nipNta,
+      kwarran: kwarran || undefined,
+      golongan: validGolongan,
       jabatan,
       pangkalan,
       noHp,

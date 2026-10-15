@@ -18,6 +18,7 @@ import {
   Users,
   BarChart3,
   Calendar,
+  MapPin,
 } from 'lucide-react';
 import { exportRekapitulasiToExcel, exportLembarIndividuToExcel, exportRekapPengujiToExcel } from '../utils/exportExcel';
 import { exportElementToPdf } from '../utils/generatePdf';
@@ -25,7 +26,7 @@ import { formatTanggalIndonesia } from '../utils/formatDate';
 import { PramukaBadge } from './PramukaBadge';
 import { OfficialScoutStamp } from './OfficialScoutStamp';
 import { KopSurat } from './KopSurat';
-import { extractGolonganName, GolonganType } from '../utils/golongan';
+import { extractGolonganName, GolonganType, isSameKwarran } from '../utils/golongan';
 
 interface RekapitulasiViewProps {
   pesertaList: Peserta[];
@@ -80,9 +81,17 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
     };
   });
 
-  // Base rows filtered strictly by effectiveGolongan
+  // Pembatasan wilayah Kwarran untuk Admin Kwarran & Penguji
+  const isKwarranRestricted =
+    (currentUser?.role === 'admin_kwarran' || currentUser?.role === 'penguji') &&
+    !!currentUser?.kwarran;
+  const userKwarran = currentUser?.kwarran || '';
+
+  // Base rows filtered strictly by effectiveGolongan dan Kwarran jika dibatasi
   const rowsInSelectedGolongan = rowDataList.filter((item) => {
-    return (item.peserta.golongan || 'Penggalang') === effectiveGolongan;
+    const matchGol = (item.peserta.golongan || 'Penggalang') === effectiveGolongan;
+    const matchKw = !isKwarranRestricted || isSameKwarran(item.peserta.kwarran, userKwarran);
+    return matchGol && matchKw;
   });
 
   // Filter for Collective Table
@@ -137,9 +146,11 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
   const belumLulusCount = sudahDinilaiCount - lulusCount;
   const persentaseKelulusan = sudahDinilaiCount > 0 ? ((lulusCount / sudahDinilaiCount) * 100).toFixed(1) : '0';
 
-  // Penguji in active Golongan
+  // Penguji in active Golongan (filtered to user Kwarran if restricted)
   const pengujiInGolongan = pengujiList.filter(
-    (pj) => !pj.golongan || pj.golongan === effectiveGolongan
+    (pj) =>
+      (!pj.golongan || pj.golongan === effectiveGolongan) &&
+      (!isKwarranRestricted || isSameKwarran(pj.kwarran, userKwarran))
   );
 
   // Generate QR for collective recap

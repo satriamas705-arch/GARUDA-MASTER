@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Cloud,
   Layers,
+  KeyRound,
 } from 'lucide-react';
 import { PramukaBadge } from './PramukaBadge';
 import { AppSettings, AuthUser } from '../types';
@@ -92,6 +93,7 @@ export interface TopNavigationProps {
   onOpenSettings?: () => void;
   onOpenDriveSync?: () => void;
   onSelectGolongan?: (gol: GolonganType) => void;
+  onOpenChangePassword?: () => void;
 }
 
 export const TopNavigation: React.FC<TopNavigationProps> = ({
@@ -105,6 +107,7 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
   onOpenSettings,
   onOpenDriveSync,
   onSelectGolongan,
+  onOpenChangePassword,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isPenguji = currentUser?.role === 'penguji';
@@ -221,17 +224,25 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
               </button>
             )}
 
-            {/* User Session Info with Bawor Photo for Admin */}
+            {/* User Session Info with Bawor Photo for Admin & Admin Kwarran */}
             {currentUser && (
-              <div className="flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-stone-800/90 border border-stone-700 shadow-inner">
+              <div
+                onClick={onOpenChangePassword}
+                className={`flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-stone-800/90 border border-stone-700 shadow-inner ${
+                  onOpenChangePassword
+                    ? 'cursor-pointer hover:border-amber-500/50 hover:bg-stone-800 transition-all'
+                    : ''
+                }`}
+                title={onOpenChangePassword ? 'Klik untuk Ubah Password Akun' : undefined}
+              >
                 <div
                   className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-xs overflow-hidden shrink-0 ${
-                    currentUser.role === 'admin'
+                    currentUser.role === 'admin' || currentUser.role === 'admin_kwarran'
                       ? 'bg-amber-100 border-2 border-amber-400 shadow-xs'
                       : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                   }`}
                 >
-                  {currentUser.role === 'admin' ? (
+                  {currentUser.role === 'admin' || currentUser.role === 'admin_kwarran' ? (
                     <img
                       src="/bawor.png"
                       alt="Foto Admin Bawor"
@@ -246,14 +257,31 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
                     {currentUser.displayName}
                   </div>
                   <div className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider leading-none">
-                    {currentUser.role === 'admin' ? 'Admin Bawor' : 'Penguji'}
+                    {currentUser.role === 'admin'
+                      ? 'Admin Bawor'
+                      : currentUser.role === 'admin_kwarran'
+                      ? `Admin Kwarran ${currentUser.kwarran || ''}`
+                      : `Penguji ${currentUser.kwarran ? `(${currentUser.kwarran})` : ''}`}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Admin Settings Button */}
-            {!isPenguji && onOpenSettings && (
+            {/* Ubah Password Button (Semua User: Admin Kwarcab, Admin Kwarran, & Penguji) */}
+            {currentUser && onOpenChangePassword && (
+              <button
+                type="button"
+                onClick={onOpenChangePassword}
+                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 active:scale-95 text-amber-300 hover:text-white border border-stone-700 hover:border-amber-500/40 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                title="Ubah Password Akun Anda"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden xl:inline">Ubah Password</span>
+              </button>
+            )}
+
+            {/* Admin Settings Button (Kwarcab Super Admin only) */}
+            {currentUser?.role === 'admin' && onOpenSettings && (
               <button
                 type="button"
                 onClick={onOpenSettings}
@@ -401,6 +429,20 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
               >
                 <Cloud className="w-3.5 h-3.5" />
                 <span>Sync Drive</span>
+              </button>
+            )}
+
+            {currentUser && onOpenChangePassword && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenChangePassword();
+                  setMobileMenuOpen(false);
+                }}
+                className="flex-1 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                <span>Ubah Password</span>
               </button>
             )}
 

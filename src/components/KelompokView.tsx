@@ -28,6 +28,7 @@ import {
   RotateCcw,
   AlertTriangle,
   Layers,
+  MapPin,
 } from 'lucide-react';
 import {
   exportRekapTimToExcel,
@@ -36,7 +37,7 @@ import {
   exportSemuaTimRekapToExcel,
   ParseRekapTimResult,
 } from '../utils/dataIo';
-import { extractGolonganName, GolonganType } from '../utils/golongan';
+import { extractGolonganName, GolonganType, isSameKwarran } from '../utils/golongan';
 import { DEFAULT_SETTINGS } from '../data/initialData';
 import { KopSurat } from './KopSurat';
 import { formatTanggalIndonesia } from '../utils/formatDate';
@@ -356,11 +357,25 @@ export const KelompokView: React.FC<KelompokViewProps> = ({
     setParseResult(null);
   };
 
-  // Filtered Tim List: Hanya menampilkan Tim Penilai untuk golongan aktif/dipilih
+  // Pembatasan wilayah Kwarran untuk Admin Kwarran & Penguji
+  const isKwarranRestricted =
+    (currentUser?.role === 'admin_kwarran' || currentUser?.role === 'penguji') &&
+    !!currentUser?.kwarran;
+  const userKwarran = currentUser?.kwarran || '';
+
+  // Filtered Tim List: Hanya menampilkan Tim Penilai untuk golongan aktif/dipilih & kwarran terkait
   const filteredKelompok = kelompokList.filter((k) => {
     const andikMembers = pesertaList.filter((p) => p.kelompokId === k.id);
     const teamGolongan = k.golongan || (andikMembers.length > 0 ? andikMembers[0].golongan : 'Penggalang');
     if (teamGolongan !== effectiveGolongan) return false;
+
+    if (isKwarranRestricted) {
+      const hasMemberInKwarran = andikMembers.some((p) => isSameKwarran(p.kwarran, userKwarran));
+      const hasPengujiInKwarran = pengujiList
+        .filter((pj) => k.pengujiIds?.includes(pj.id))
+        .some((pj) => isSameKwarran(pj.kwarran, userKwarran));
+      if (!hasMemberInKwarran && !hasPengujiInKwarran && andikMembers.length > 0) return false;
+    }
 
     const andikMatch = andikMembers.some((a) =>
       a.nama.toLowerCase().includes(searchTerm.toLowerCase())
@@ -380,7 +395,11 @@ export const KelompokView: React.FC<KelompokViewProps> = ({
   });
 
   // Calculate Overall Statistics for effectiveGolongan
-  const andikInGolongan = pesertaList.filter((p) => (p.golongan || 'Penggalang') === effectiveGolongan);
+  const andikInGolongan = pesertaList.filter((p) => {
+    const matchGol = (p.golongan || 'Penggalang') === effectiveGolongan;
+    const matchKw = !isKwarranRestricted || isSameKwarran(p.kwarran, userKwarran);
+    return matchGol && matchKw;
+  });
   const totalAndik = andikInGolongan.length;
   const totalSudahDinilai = andikInGolongan.filter((p) => !!penilaianMap[p.id]).length;
   const isSiaga = effectiveGolongan === 'Siaga';

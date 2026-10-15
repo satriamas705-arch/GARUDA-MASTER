@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AuthUser, Penguji, AppSettings } from '../types';
-import { attemptLogin, getPengujiPasswordCandidates } from '../utils/auth';
-import { GolonganType, extractGolonganName } from '../utils/golongan';
+import { attemptLogin, getPengujiPasswordCandidates, cleanString } from '../utils/auth';
+import { GolonganType, extractGolonganName, DAFTAR_KWARRAN_BANYUMAS } from '../utils/golongan';
 import {
   Lock,
   User,
@@ -17,6 +17,7 @@ import {
   HelpCircle,
   Layers,
   UserCheck,
+  MapPin,
 } from 'lucide-react';
 
 interface LoginFormProps {
@@ -34,7 +35,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   const [password, setPassword] = useState('admin');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'admin' | 'penguji'>('admin');
+  const [activeTab, setActiveTab] = useState<'admin' | 'admin_kwarran' | 'penguji'>('admin');
+  const [selectedKwarran, setSelectedKwarran] = useState<string>('Kemranjen');
   const [selectedGolongan, setSelectedGolongan] = useState<GolonganType>(
     extractGolonganName(settings.golongan) || 'Penggalang'
   );
@@ -64,12 +66,20 @@ export const LoginForm: React.FC<LoginFormProps> = ({
     }
   };
 
-  const handleTabChange = (tab: 'admin' | 'penguji') => {
+  const handleSelectKwarranQuick = (kwarran: string) => {
+    setSelectedKwarran(kwarran);
+    setErrorMessage(null);
+  };
+
+  const handleTabChange = (tab: 'admin' | 'admin_kwarran' | 'penguji') => {
     setActiveTab(tab);
     setErrorMessage(null);
     if (tab === 'admin') {
       setUsername('admin');
       setPassword('admin');
+    } else if (tab === 'admin_kwarran') {
+      setUsername('admin');
+      setPassword('');
     } else {
       setUsername('penguji');
       const filtered = pengujiList.filter(
@@ -93,7 +103,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({
 
     // Pilihan golongan hanya diberikan pada penguji, admin tidak dibatasi golongan saat login
     const golForLogin = activeTab === 'penguji' ? selectedGolongan : undefined;
-    const result = attemptLogin(username, password, pengujiList, golForLogin);
+    const targetKw = activeTab === 'admin_kwarran' ? selectedKwarran : undefined;
+    const result = attemptLogin(username, password, pengujiList, golForLogin, targetKw);
     if (result.success && result.user) {
       onLoginSuccess(result.user);
     } else {
@@ -154,13 +165,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               {settings.kwarran || 'KWARRAN KEMRANJEN'} • {settings.kwartirCabang}
             </p>
 
+            {/* Tulisan Tahun (tulisan golongan di samping tahun dihilangkan sesuai permintaan) */}
             <div className="flex items-center justify-center gap-2 text-xs sm:text-sm text-stone-300 pt-1">
-              <span className="bg-stone-800/80 px-2.5 py-1 rounded-md border border-stone-700/60 font-medium">
+              <span className="bg-stone-800/80 px-3.5 py-1 rounded-md border border-stone-700/60 font-semibold text-stone-200">
                 Tahun {settings.tahun}
-              </span>
-              <span>•</span>
-              <span className="bg-stone-800/80 px-2.5 py-1 rounded-md border border-stone-700/60 font-semibold text-amber-300">
-                {settings.golongan}
               </span>
             </div>
 
@@ -203,7 +211,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                     Silakan Masuk
                   </h2>
                   <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 shrink-0">
-                    {activeTab === 'admin' ? 'Admin Portal' : 'Penguji Portal'}
+                    {activeTab === 'admin'
+                      ? 'Admin Kwarcab'
+                      : activeTab === 'admin_kwarran'
+                      ? 'Admin Kwarran'
+                      : 'Penguji Portal'}
                   </span>
                 </div>
                 <p className="text-xs text-stone-500 mt-0.5 truncate">
@@ -212,33 +224,50 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               </div>
             </div>
 
-            {/* Role Tabs */}
-            <div className="grid grid-cols-2 p-1 rounded-xl bg-stone-100 border border-stone-200 mb-5">
+            {/* Role Tabs: Admin Kwarcab, Admin Kwarran, & Penguji */}
+            <div className="grid grid-cols-3 p-1 rounded-xl bg-stone-100 border border-stone-200 mb-5 gap-1">
               <button
                 type="button"
                 onClick={() => handleTabChange('admin')}
-                className={`py-2 px-3 text-xs sm:text-sm font-black rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-2 px-1 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   activeTab === 'admin'
                     ? 'bg-amber-600 text-white shadow-sm'
                     : 'text-stone-600 hover:text-stone-900'
                 }`}
+                title="Login Administrator Kwarcab"
               >
-                <div className="w-4 h-4 rounded-full overflow-hidden shrink-0 bg-white/20 flex items-center justify-center">
+                <div className="w-3.5 h-3.5 rounded-full overflow-hidden shrink-0 bg-white/20 flex items-center justify-center">
                   <img src="/bawor.png" alt="Bawor" className="w-full h-full object-contain" />
                 </div>
-                <span>Admin</span>
+                <span className="truncate">Kwarcab</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => handleTabChange('admin_kwarran')}
+                className={`py-2 px-1 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                  activeTab === 'admin_kwarran'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+                title="Login Administrator Kwarran"
+              >
+                <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                <span className="truncate">Kwarran</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => handleTabChange('penguji')}
-                className={`py-2 px-3 text-xs sm:text-sm font-black rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-2 px-1 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   activeTab === 'penguji'
                     ? 'bg-amber-600 text-white shadow-sm'
                     : 'text-stone-600 hover:text-stone-900'
                 }`}
+                title="Login Tim Penguji (User: penguji, Password: nama penguji huruf kecil)"
               >
-                <Award className="w-4 h-4" />
-                <span>Penguji</span>
+                <Award className="w-3.5 h-3.5" />
+                <span className="truncate">Penguji</span>
               </button>
             </div>
 
@@ -367,6 +396,74 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                     *Form penilaian, data peserta, data penguji, tim penilai, dan rekap nilai otomatis difilter khusus untuk golongan <strong>{selectedGolongan}</strong> yang dipilih.
                   </p>
                 </div>
+              ) : activeTab === 'admin_kwarran' ? (
+                <div className="space-y-3">
+                  <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-300 text-stone-800 flex items-center gap-3.5 shadow-xs">
+                    <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-amber-100 border-2 border-amber-400 p-1 flex items-center justify-center shadow-xs shrink-0 overflow-hidden">
+                      <img
+                        src="/bawor.png"
+                        alt="Foto Admin Bawor"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-extrabold text-xs text-stone-900">Administrator Kwarran</span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-200 text-amber-900 border border-amber-300">
+                          Kwarran {selectedKwarran}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-stone-600 mt-0.5 leading-snug">
+                        Kewenangan akses pengelolaan data calon Pramuka Garuda &amp; tim penguji wilayah Kwarran {selectedKwarran}.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Pilihan Cepat Kwartir Ranting */}
+                  <div className="p-3 rounded-xl bg-stone-50 border border-stone-200">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-bold text-stone-700 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Pilih Kwartir Ranting Anda:</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-stone-600 bg-stone-200 px-1.5 py-0.5 rounded">
+                        27 Kwarran
+                      </span>
+                    </div>
+
+                    <select
+                      value={selectedKwarran}
+                      onChange={(e) => handleSelectKwarranQuick(e.target.value)}
+                      className="w-full bg-white border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                    >
+                      {DAFTAR_KWARRAN_BANYUMAS.map((kw) => (
+                        <option key={kw} value={kw}>
+                          Kwarran {kw}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="flex flex-wrap gap-1 mt-2 max-h-20 overflow-y-auto pr-1">
+                      {['Kemranjen', 'Purwokerto Timur', 'Banyumas', 'Sokaraja', 'Ajibarang', 'Wangon', 'Cilongok', 'Baturraden'].map((kw) => {
+                        const isSel = selectedKwarran === kw;
+                        return (
+                          <button
+                            key={kw}
+                            type="button"
+                            onClick={() => handleSelectKwarranQuick(kw)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
+                              isSel
+                                ? 'bg-amber-600 text-white border-amber-700'
+                                : 'bg-white text-stone-700 border-stone-200 hover:bg-amber-50'
+                            }`}
+                          >
+                            {kw}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-300 text-stone-800 flex items-center gap-3.5 shadow-xs">
                   <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-amber-100 border-2 border-amber-400 p-1 flex items-center justify-center shadow-xs shrink-0 overflow-hidden">
@@ -384,7 +481,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                       </span>
                     </div>
                     <p className="text-[11px] text-stone-600 mt-0.5 leading-snug">
-                      Akses penuh master data seluruh golongan (Siaga, Penggalang, Penegak, &amp; Pandega), sinkronisasi cloud Google Drive, serta cetak berita acara penetapan.
+                      Akses penuh master data seluruh kwarran &amp; golongan (Siaga, Penggalang, Penegak, &amp; Pandega), sinkronisasi cloud Google Drive, serta cetak berita acara penetapan.
                     </p>
                   </div>
                 </div>
@@ -432,16 +529,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={
-                      activeTab === 'admin'
-                        ? '••••••••'
-                        : 'nama penguji huruf kecil'
+                      activeTab === 'penguji'
+                        ? 'nama penguji / password'
+                        : '••••••••'
                     }
                     className="w-full pl-10 pr-10 py-2.5 bg-stone-50 border border-stone-300 rounded-xl text-sm font-semibold text-stone-900 focus:ring-2 focus:ring-amber-500 focus:bg-white focus:outline-none transition-all font-mono"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-stone-400 hover:text-stone-700"
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-stone-400 hover:text-stone-700 cursor-pointer"
                   >
                     {showPassword ? (
                       <EyeOff className="w-4 h-4" />
@@ -463,14 +560,13 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               {/* Submit Button */}
               <button
                 type="submit"
-                className="w-full py-3 bg-amber-600 hover:bg-amber-700 active:scale-98 text-white font-black text-sm rounded-xl shadow-lg shadow-amber-600/25 flex items-center justify-center gap-2 transition-all mt-2"
+                className="w-full py-3 bg-amber-600 hover:bg-amber-700 active:scale-98 text-white font-black text-sm rounded-xl shadow-lg shadow-amber-600/25 flex items-center justify-center gap-2 transition-all mt-2 cursor-pointer"
               >
                 <span>Masuk Aplikasi</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
 
-            {/* Petunjuk Akses Akun (hanya untuk Penguji, disembunyikan untuk Admin) */}
             {activeTab === 'penguji' && (
               <div className="mt-5 pt-4 border-t border-stone-200 space-y-3">
                 <div className="text-[11px] font-bold uppercase tracking-wider text-stone-500 flex items-center gap-1">

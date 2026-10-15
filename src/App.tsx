@@ -40,8 +40,9 @@ import { LembarPenilaianPrint } from './components/LembarPenilaianPrint';
 import { SettingsModal } from './components/SettingsModal';
 import { LoginForm } from './components/LoginForm';
 import { DriveSyncModal } from './components/DriveSyncModal';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { LogOut, ShieldAlert } from 'lucide-react';
-import { extractGolonganName, getDefaultTKUForGolongan, GolonganType } from './utils/golongan';
+import { extractGolonganName, getDefaultTKUForGolongan, GolonganType, isSameKwarran } from './utils/golongan';
 import { getGoogleAccessToken } from './utils/googleAuth';
 import { GOOGLE_DRIVE_FOLDER_ID } from './utils/googleDrive';
 import { findOrCreateSpreadsheet, syncDataToGoogleSheets } from './utils/googleSheets';
@@ -82,6 +83,7 @@ export default function App() {
   const [printPesertaId, setPrintPesertaId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDriveSyncOpen, setIsDriveSyncOpen] = useState(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   // Sync to localStorage
@@ -143,9 +145,18 @@ export default function App() {
     return () => clearTimeout(timeout);
   }, [penilaianMap, pesertaList, pengujiList, kelompokList, settings.autoSyncToSheets]);
 
-  // Keep selectedPesertaId synchronized with selectedGolongan
+  // Keep selectedPesertaId synchronized with selectedGolongan and user Kwarran
   useEffect(() => {
-    const listInGol = pesertaList.filter((p) => (p.golongan || 'Penggalang') === selectedGolongan);
+    const isKwarranRestricted =
+      (currentUser?.role === 'admin_kwarran' || currentUser?.role === 'penguji') &&
+      !!currentUser?.kwarran;
+    const userKwarran = currentUser?.kwarran || '';
+
+    const listInGol = pesertaList.filter(
+      (p) =>
+        (p.golongan || 'Penggalang') === selectedGolongan &&
+        (!isKwarranRestricted || isSameKwarran(p.kwarran, userKwarran))
+    );
     if (listInGol.length > 0) {
       if (!selectedPesertaId || !listInGol.some((p) => p.id === selectedPesertaId)) {
         setSelectedPesertaId(listInGol[0].id);
@@ -153,7 +164,7 @@ export default function App() {
     } else {
       setSelectedPesertaId(null);
     }
-  }, [selectedGolongan, pesertaList]);
+  }, [selectedGolongan, pesertaList, currentUser]);
 
   const handleSelectTab = (tab: NavTab) => {
     setActiveTab(tab);
@@ -463,11 +474,21 @@ export default function App() {
     ? kelompokList.find((k) => k.id === printPeserta.kelompokId)
     : undefined;
 
+  const isKwarranRestricted =
+    (currentUser?.role === 'admin_kwarran' || currentUser?.role === 'penguji') &&
+    !!currentUser?.kwarran;
+  const userKwarran = currentUser?.kwarran || '';
+
   const pesertaInGolonganCount = pesertaList.filter(
-    (p) => (p.golongan || 'Penggalang') === selectedGolongan
+    (p) =>
+      (p.golongan || 'Penggalang') === selectedGolongan &&
+      (!isKwarranRestricted || isSameKwarran(p.kwarran, userKwarran))
   ).length;
   const sudahDinilaiInGolonganCount = pesertaList.filter(
-    (p) => (p.golongan || 'Penggalang') === selectedGolongan && !!penilaianMap[p.id]
+    (p) =>
+      (p.golongan || 'Penggalang') === selectedGolongan &&
+      (!isKwarranRestricted || isSameKwarran(p.kwarran, userKwarran)) &&
+      !!penilaianMap[p.id]
   ).length;
 
   return (
@@ -488,6 +509,7 @@ export default function App() {
         }}
         onOpenDriveSync={() => setIsDriveSyncOpen(true)}
         onSelectGolongan={handleSelectGolongan}
+        onOpenChangePassword={() => setIsChangePasswordOpen(true)}
       />
 
         {/* Main Content Area (hidden during print when printPesertaId modal is active) */}
@@ -654,6 +676,16 @@ export default function App() {
         settings={settings}
         onApplySyncData={handleApplySyncData}
       />
+
+      {/* Modal Ubah Password untuk Semua Pengguna (Admin Kwarcab, Admin Kwarran, & Penguji) */}
+      {currentUser && (
+        <ChangePasswordModal
+          isOpen={isChangePasswordOpen}
+          onClose={() => setIsChangePasswordOpen(false)}
+          currentUser={currentUser}
+          pengujiList={pengujiList}
+        />
+      )}
 
       {/* Top-level Logout Confirmation Modal (Never clipped by header stacking context) */}
       {isLogoutModalOpen && (
