@@ -223,7 +223,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                     : 'text-stone-600 hover:text-stone-900'
                 }`}
               >
-                <ShieldCheck className="w-4 h-4" />
+                <div className="w-4 h-4 rounded-full overflow-hidden shrink-0 bg-white/20 flex items-center justify-center">
+                  <img src="/bawor.png" alt="Bawor" className="w-full h-full object-contain" />
+                </div>
                 <span>Admin</span>
               </button>
               <button
@@ -366,14 +368,25 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                   </p>
                 </div>
               ) : (
-                <div className="p-3 rounded-xl bg-stone-50 border border-stone-200 text-stone-700">
-                  <div className="flex items-center gap-2 text-xs font-bold text-stone-800">
-                    <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>Akses Penuh Administrator Kwarcab</span>
+                <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-300 text-stone-800 flex items-center gap-3.5 shadow-xs">
+                  <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-amber-100 border-2 border-amber-400 p-1 flex items-center justify-center shadow-xs shrink-0 overflow-hidden">
+                    <img
+                      src="/bawor.png"
+                      alt="Foto Admin Bawor"
+                      className="w-full h-full object-contain"
+                    />
                   </div>
-                  <p className="text-[11px] text-stone-500 mt-1 leading-snug">
-                    Administrator memiliki hak akses untuk mengelola data master seluruh golongan (Siaga, Penggalang, Penegak, dan Pandega).
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-extrabold text-xs text-stone-900">Administrator Kwarcab</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-200 text-amber-900 border border-amber-300">
+                        Ksatria Bawor
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-stone-600 mt-0.5 leading-snug">
+                      Akses penuh master data seluruh golongan (Siaga, Penggalang, Penegak, &amp; Pandega), sinkronisasi cloud Google Drive, serta cetak berita acara penetapan.
+                    </p>
+                  </div>
                 </div>
               )}
 

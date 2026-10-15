@@ -388,6 +388,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
+      {/* Logged-in User Profile in Sidebar */}
+      {currentUser && (
+        <div className="p-3 border-t border-stone-800 bg-stone-950/60 flex items-center gap-3">
+          <div
+            className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs overflow-hidden shrink-0 ${
+              currentUser.role === 'admin'
+                ? 'bg-amber-100 border-2 border-amber-400 shadow-xs'
+                : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+            }`}
+          >
+            {currentUser.role === 'admin' ? (
+              <img
+                src="/bawor.png"
+                alt="Foto Admin Bawor"
+                className="w-full h-full object-contain p-0.5"
+              />
+            ) : (
+              <Award className="w-5 h-5 text-emerald-400" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-bold text-xs text-white truncate">
+              {currentUser.displayName}
+            </div>
+            <div className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider flex items-center gap-1">
+              <span>{currentUser.role === 'admin' ? 'Administrator (Bawor)' : 'Penguji'}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Footer Info in Sidebar */}
       <div className="p-3.5 border-t border-stone-800 bg-stone-950/40 text-[11px] text-stone-400">
         <div className="flex items-center justify-between text-stone-400 text-[10px] mb-1 font-semibold">
@@ -575,16 +606,20 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             {currentUser && (
               <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-stone-800/90 border border-stone-700 shadow-inner">
                 <div
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
+                  className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs overflow-hidden shrink-0 ${
                     currentUser.role === 'admin'
-                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      ? 'bg-amber-100 border-2 border-amber-400 shadow-xs'
                       : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                   }`}
                 >
                   {currentUser.role === 'admin' ? (
-                    <ShieldCheck className="w-4 h-4" />
+                    <img
+                      src="/bawor.png"
+                      alt="Foto Admin Bawor"
+                      className="w-full h-full object-contain p-0.5"
+                    />
                   ) : (
-                    <Award className="w-4 h-4" />
+                    <Award className="w-4 h-4 text-emerald-400" />
                   )}
                 </div>
                 <div className="text-left">
@@ -592,7 +627,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                     {currentUser.displayName}
                   </div>
                   <div className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider leading-none">
-                    {currentUser.role === 'admin' ? 'Administrator' : 'Penguji'}
+                    {currentUser.role === 'admin' ? 'Administrator (Bawor)' : 'Penguji'}
                   </div>
                 </div>
               </div>

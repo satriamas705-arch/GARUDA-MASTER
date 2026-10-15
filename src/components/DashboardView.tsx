@@ -303,6 +303,64 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
+      {/* Admin Specific Focus Card with Bawor */}
+      {!isPenguji && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-50 via-white to-amber-50/60 border border-amber-300 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-amber-100 border-2 border-amber-400 p-1 flex items-center justify-center shadow-xs shrink-0 overflow-hidden">
+              <img
+                src="/bawor.png"
+                alt="Foto Admin Bawor"
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-amber-900 uppercase tracking-wider">
+                  Admin Masuk:
+                </span>
+                <span className="font-extrabold text-stone-950 text-sm sm:text-base">
+                  {currentUser?.displayName || 'Administrator Kwarcab'}
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-600 text-white shadow-xs">
+                  Ksatria Bawor
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-900 text-amber-300">
+                  Golongan: {effectiveGolongan}
+                </span>
+              </div>
+              <p className="text-xs text-stone-600 mt-1">
+                Akses penuh verifikasi administrasi, penilaian wawancara, manajemen master data peserta &amp; penguji, serta cetak berita acara penetapan Pramuka Garuda {settings.kwartirCabang || 'Kwarcab Banyumas'}.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => onNavigateToTab('penilaian')}
+              className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+            >
+              Form Penilaian
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigateToTab('peserta')}
+              className="px-3 py-2 bg-white hover:bg-stone-50 border border-amber-300 text-stone-800 font-bold text-xs rounded-xl transition-all cursor-pointer"
+            >
+              Data Peserta
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigateToTab('rekap')}
+              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+            >
+              Rekap &amp; Cetak
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Metric Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div

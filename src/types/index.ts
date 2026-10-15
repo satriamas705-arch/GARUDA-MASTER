@@ -69,6 +69,7 @@ export interface AuthUser {
   role: UserRole;
   username: string;
   displayName: string;
+  avatarUrl?: string; // URL / path to user profile photo (e.g. /bawor.png for admin)
   pengujiId?: string; // Set when logged in as Penguji
   pengujiData?: Penguji;
   selectedGolongan?: 'Siaga' | 'Penggalang' | 'Penegak' | 'Pandega'; // Golongan yang dipilih saat login

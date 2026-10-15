@@ -88,6 +88,7 @@ export function attemptLogin(
           role: 'admin',
           username: 'admin',
           displayName: 'Administrator Kwarcab',
+          avatarUrl: '/bawor.png',
           selectedGolongan: selectedGolongan || undefined,
         },
       };
@@ -136,7 +137,11 @@ export function loadCurrentAuthUser(): AuthUser | null {
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
     if (raw) {
-      return JSON.parse(raw);
+      const user = JSON.parse(raw) as AuthUser;
+      if (user.role === 'admin' && !user.avatarUrl) {
+        user.avatarUrl = '/bawor.png';
+      }
+      return user;
     }
   } catch (err) {
     console.error('Failed to load auth user', err);
