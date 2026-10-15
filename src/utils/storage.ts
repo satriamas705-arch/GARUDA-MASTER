@@ -52,6 +52,16 @@ export function loadPeserta(): Peserta[] {
           return {
             ...item,
             golongan: item.golongan || init?.golongan || 'Penggalang',
+            kwarran: item.kwarran || init?.kwarran || 'Kemranjen',
+            tempatLahir: item.tempatLahir || init?.tempatLahir || 'Banyumas',
+            tanggalLahir:
+              item.tanggalLahir ||
+              init?.tanggalLahir ||
+              (item.golongan === 'Siaga'
+                ? '2016-05-10'
+                : item.golongan === 'Penegak'
+                ? '2009-03-15'
+                : '2012-05-14'),
           };
         });
       }

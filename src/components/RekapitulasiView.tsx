@@ -88,10 +88,13 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({
   // Filter for Collective Table
   const filteredRows = rowsInSelectedGolongan.filter((item) => {
     const { peserta, penilaian } = item;
+    const term = searchTerm.toLowerCase();
     const matchSearch =
-      peserta.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      peserta.nomorPeserta.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      peserta.pangkalan.toLowerCase().includes(searchTerm.toLowerCase());
+      peserta.nama.toLowerCase().includes(term) ||
+      peserta.nomorPeserta.toLowerCase().includes(term) ||
+      peserta.pangkalan.toLowerCase().includes(term) ||
+      (peserta.kwarran || '').toLowerCase().includes(term) ||
+      (peserta.tempatLahir || '').toLowerCase().includes(term);
 
     const matchKelompok =
       filterKelompok === 'ALL' || peserta.kelompokId === filterKelompok;

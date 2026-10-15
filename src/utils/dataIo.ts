@@ -17,12 +17,19 @@ function normalizeKey(str: string): string {
 // 1. DATA PESERTA (EXCEL / CSV IMPORT-EXPORT)
 // ==========================================
 
-import { extractGolonganName, getDefaultTKUForGolongan } from './golongan';
+import {
+  extractGolonganName,
+  getDefaultTKUForGolongan,
+  deteksiGolonganDariTanggalLahir,
+} from './golongan';
 
 export const PESERTA_EXCEL_HEADERS = [
   'NO. PESERTA',
   'NAMA LENGKAP',
   'L/P',
+  'KWARRAN',
+  'TEMPAT LAHIR',
+  'TANGGAL LAHIR (YYYY-MM-DD)',
   'PANGKALAN (SEKOLAH)',
   'NO. GUDEP',
   'REGU / KELOMPOK',
@@ -44,19 +51,25 @@ export function downloadPesertaTemplate(golonganSetting?: string) {
       'PG-01/BMS/2026',
       'Muhammad Al Fatih',
       'L',
+      'Purwokerto Timur',
+      'Banyumas',
+      '2012-05-14',
       'SMP Negeri 1 Purwokerto',
       '02.001 - 02.002',
       'Regu Garuda',
       g,
       defaultTku,
       '081234567890',
-      'Kak Kak Budi Santoso',
+      'Kak Budi Santoso',
     ],
     [
       'PG-02/BMS/2026',
       'Siti Nur Azizah',
       'P',
-      'SMP Negeri 2 Sokaraja',
+      'Kemranjen',
+      'Banyumas',
+      '2012-08-22',
+      'SMP Negeri 1 Kemranjen',
       '05.011 - 05.012',
       'Regu Melati',
       g,
@@ -73,6 +86,9 @@ export function downloadPesertaTemplate(golonganSetting?: string) {
     { wch: 18 }, // No Peserta
     { wch: 28 }, // Nama
     { wch: 6 },  // L/P
+    { wch: 20 }, // Kwarran
+    { wch: 18 }, // Tempat Lahir
+    { wch: 24 }, // Tanggal Lahir
     { wch: 30 }, // Pangkalan
     { wch: 18 }, // Gudep
     { wch: 20 }, // Regu
@@ -99,6 +115,11 @@ export function exportPesertaToExcel(
     'NO. PESERTA',
     'NAMA LENGKAP',
     'L/P',
+    'KWARRAN',
+    'TEMPAT LAHIR',
+    'TANGGAL LAHIR',
+    'USIA',
+    'DETEKSI GOLONGAN',
     'PANGKALAN (SEKOLAH)',
     'NO. GUDEP',
     'REGU / KELOMPOK',
@@ -114,16 +135,29 @@ export function exportPesertaToExcel(
     const pen = penilaianMap ? penilaianMap[p.id] : undefined;
     let statusNilai = 'Belum Dinilai';
     if (pen) {
+      const isSiaga = p.golongan === 'Siaga';
+      const maxSkor = pen.wawancara.length * 5 || (isSiaga ? 45 : 55);
       const skor = pen.wawancara.reduce((s, w) => s + (w.poin || 0), 0);
-      const pct = (skor / 55) * 100;
+      const pct = (skor / maxSkor) * 100;
       statusNilai = pct >= 80 ? `Lulus (${pct.toFixed(1)}%)` : `Belum Lulus (${pct.toFixed(1)}%)`;
     }
+
+    const deteksi = deteksiGolonganDariTanggalLahir(p.tanggalLahir, undefined, p.golongan);
+    const usiaStr = deteksi ? deteksi.usiaFormatted : '-';
+    const deteksiStr = deteksi
+      ? `${deteksi.golonganTerdeteksi} (${deteksi.isSesuai ? 'Sesuai' : 'Tidak Sesuai'})`
+      : '-';
 
     return [
       idx + 1,
       p.nomorPeserta,
       p.nama,
       p.jenisKelamin,
+      p.kwarran || '-',
+      p.tempatLahir || '-',
+      p.tanggalLahir || '-',
+      usiaStr,
+      deteksiStr,
       p.pangkalan,
       p.gudep || '-',
       kel?.nama || '-',
@@ -141,6 +175,11 @@ export function exportPesertaToExcel(
     { wch: 18 },
     { wch: 28 },
     { wch: 6 },
+    { wch: 20 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 22 },
     { wch: 30 },
     { wch: 18 },
     { wch: 20 },
@@ -247,14 +286,86 @@ export async function parsePesertaFile(
       }
     }
 
+    const kwarran = (
+      normalizedRow['kwarran'] ||
+      normalizedRow['ranting'] ||
+      normalizedRow['kwartirranting'] ||
+      normalizedRow['kecamatan'] ||
+      ''
+    ).toString().trim();
+
+    let tempatLahir = (
+      normalizedRow['tempatlahir'] ||
+      normalizedRow['tempat'] ||
+      normalizedRow['tmplahir'] ||
+      normalizedRow['kota'] ||
+      ''
+    ).toString().trim();
+
+    let tanggalLahir = (
+      normalizedRow['tanggallahiryyyymmdd'] ||
+      normalizedRow['tanggallahir'] ||
+      normalizedRow['tgllahir'] ||
+      normalizedRow['tgl'] ||
+      ''
+    ).toString().trim();
+
+    // Check if combined TTL field like "Banyumas, 14 Mei 2012" was provided
+    const combinedTTL = (
+      normalizedRow['tempattanggallahir'] ||
+      normalizedRow['ttl'] ||
+      ''
+    ).toString().trim();
+
+    if (combinedTTL && !tempatLahir && !tanggalLahir) {
+      if (combinedTTL.includes(',')) {
+        const [tmpl, tgl] = combinedTTL.split(',');
+        tempatLahir = tmpl.trim();
+        tanggalLahir = tgl.trim();
+      } else {
+        tempatLahir = combinedTTL;
+      }
+    }
+
+    // Try parsing Excel serialized date number if applicable
+    const rawTgl = row['TANGGAL LAHIR (YYYY-MM-DD)'] || row['TANGGAL LAHIR'] || row['Tanggal Lahir'];
+    if (typeof rawTgl === 'number') {
+      try {
+        const dateObj = XLSX.SSF.parse_date_code(rawTgl);
+        if (dateObj) {
+          tanggalLahir = `${dateObj.y}-${String(dateObj.m).padStart(2, '0')}-${String(dateObj.d).padStart(2, '0')}`;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     const golonganRaw = (
       normalizedRow['golongan'] ||
-      fallbackGolongan
+      ''
     ).toString().trim();
+
+    // Auto-detect golongan from tanggalLahir if not specified
+    let detectedGol: Peserta['golongan'] | undefined = undefined;
+    if (tanggalLahir) {
+      const det = deteksiGolonganDariTanggalLahir(tanggalLahir);
+      if (
+        det &&
+        (det.golonganTerdeteksi === 'Siaga' ||
+          det.golonganTerdeteksi === 'Penggalang' ||
+          det.golonganTerdeteksi === 'Penegak' ||
+          det.golonganTerdeteksi === 'Pandega')
+      ) {
+        detectedGol = det.golonganTerdeteksi;
+      }
+    }
+
+    const matchedGolongan = ['Penggalang', 'Siaga', 'Penegak', 'Pandega'].find(
+      (g) => g.toLowerCase() === golonganRaw.toLowerCase()
+    ) as any;
+
     const validGolongan: Peserta['golongan'] =
-      ['Penggalang', 'Siaga', 'Penegak', 'Pandega'].find(
-        (g) => g.toLowerCase() === golonganRaw.toLowerCase()
-      ) as any || fallbackGolongan;
+      matchedGolongan || detectedGol || fallbackGolongan;
 
     const tingkatRaw = (
       normalizedRow['tingkattku'] ||
@@ -292,6 +403,9 @@ export async function parsePesertaFile(
       pangkalan,
       gudep,
       kelompokId,
+      kwarran: kwarran || undefined,
+      tempatLahir: tempatLahir || undefined,
+      tanggalLahir: tanggalLahir || undefined,
       golongan: validGolongan,
       tingkatTKU: validTingkat,
       kontakHp,

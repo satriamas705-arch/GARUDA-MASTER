@@ -32,6 +32,9 @@ export interface Peserta {
   kelompokId?: string; // ID of Kelompok/Regu
   golongan: 'Penggalang' | 'Siaga' | 'Penegak' | 'Pandega';
   tingkatTKU: 'Ramu' | 'Rakit' | 'Terap' | 'Bantara' | 'Laksana' | 'Mula' | 'Bantu' | 'Tata' | 'Pandega';
+  kwarran?: string; // e.g. "Kemranjen", "Purwokerto Timur"
+  tempatLahir?: string; // e.g. "Banyumas", "Purwokerto"
+  tanggalLahir?: string; // Format: "YYYY-MM-DD" e.g. "2012-05-14"
   kontakHp?: string;
   namaPembina?: string;
 }

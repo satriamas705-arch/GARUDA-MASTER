@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Peserta, Kelompok, PenilaianPeserta, AppSettings, AuthUser } from '../types';
 import {
   UserPlus,
@@ -23,6 +23,12 @@ import {
   RotateCcw,
   Sparkles,
   Layers,
+  MapPin,
+  Calendar,
+  Building2,
+  Table as TableIcon,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   exportPesertaToExcel,
@@ -35,6 +41,10 @@ import {
   getDefaultTKUForGolongan,
   getTKUOptionsForGolongan,
   GolonganType,
+  DAFTAR_KWARRAN_BANYUMAS,
+  deteksiGolonganDariTanggalLahir,
+  formatTempatTanggalLahir,
+  DeteksiGolonganResult,
 } from '../utils/golongan';
 
 interface PesertaViewProps {
@@ -78,8 +88,11 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterKelompok, setFilterKelompok] = useState('ALL');
+  const [filterPangkalan, setFilterPangkalan] = useState('ALL');
+  const [filterKwarran, setFilterKwarran] = useState('ALL');
   const [filterGolongan, setFilterGolongan] = useState<'ALL' | GolonganType>(effectiveGolongan);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'LULUS' | 'BELUM_LULUS' | 'BELUM_DINILAI'>('ALL');
+  const [showKwarranTable, setShowKwarranTable] = useState(false);
 
   useEffect(() => {
     if (activeGolongan) {
@@ -110,6 +123,9 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
   const [formNomor, setFormNomor] = useState('');
   const [formNama, setFormNama] = useState('');
   const [formJK, setFormJK] = useState<'L' | 'P'>('L');
+  const [formKwarran, setFormKwarran] = useState('');
+  const [formTempatLahir, setFormTempatLahir] = useState('');
+  const [formTanggalLahir, setFormTanggalLahir] = useState('');
   const [formPangkalan, setFormPangkalan] = useState('');
   const [formGudep, setFormGudep] = useState('');
   const [formKelompokId, setFormKelompokId] = useState('');
@@ -122,12 +138,77 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
   const [formHp, setFormHp] = useState('');
   const [formPembina, setFormPembina] = useState('');
 
+  // Daftar unik Pangkalan/Sekolah dari seluruh peserta untuk filter
+  const uniqueSekolahList = useMemo(() => {
+    const set = new Set<string>();
+    pesertaList.forEach((p) => {
+      if (p.pangkalan && p.pangkalan.trim()) {
+        set.add(p.pangkalan.trim());
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [pesertaList]);
+
+  // Daftar unik Kwarran dari data peserta digabung dengan daftar Kwarran Banyumas
+  const uniqueKwarranList = useMemo(() => {
+    const set = new Set<string>();
+    pesertaList.forEach((p) => {
+      if (p.kwarran && p.kwarran.trim()) {
+        set.add(p.kwarran.trim());
+      }
+    });
+    DAFTAR_KWARRAN_BANYUMAS.forEach((k) => set.add(k));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [pesertaList]);
+
+  // Rekapitulasi Tabel Distribusi Peserta per Kwarran
+  const kwarranDistribution = useMemo(() => {
+    const stats: Record<string, { total: number; lulus: number; belum: number; belumDinilai: number }> = {};
+    pesertaList
+      .filter((p) => (p.golongan || 'Penggalang') === effectiveGolongan)
+      .forEach((p) => {
+        const kw = p.kwarran?.trim() || 'Lainnya / Belum Diisi';
+        if (!stats[kw]) {
+          stats[kw] = { total: 0, lulus: 0, belum: 0, belumDinilai: 0 };
+        }
+        stats[kw].total++;
+        const pen = penilaianMap[p.id];
+        if (!pen) {
+          stats[kw].belumDinilai++;
+        } else {
+          const isSiaga = p.golongan === 'Siaga';
+          const maxSkor = pen.wawancara.length * 5 || (isSiaga ? 45 : 55);
+          const skor = pen.wawancara.reduce((sum, w) => sum + (w.poin || 0), 0);
+          if ((skor / maxSkor) * 100 >= 80) stats[kw].lulus++;
+          else stats[kw].belum++;
+        }
+      });
+    return Object.entries(stats).sort((a, b) => b[1].total - a[1].total);
+  }, [pesertaList, effectiveGolongan, penilaianMap]);
+
+  // Real-time detection inside Form Modal
+  const modalDeteksiGolongan = useMemo(() => {
+    return deteksiGolonganDariTanggalLahir(formTanggalLahir, settings.tanggalDefault, formGolongan);
+  }, [formTanggalLahir, settings.tanggalDefault, formGolongan]);
+
   const openAddModal = () => {
     setEditingPeserta(null);
     const nextNum = (pesertaList.length + 1).toString().padStart(2, '0');
     setFormNomor(`PG-${nextNum}/BMS/${settings.tahun || '2026'}`);
     setFormNama('');
     setFormJK('L');
+    const cleanKwarran = settings.kwarran ? settings.kwarran.replace(/KWARRAN\s*/i, '').trim() : 'Kemranjen';
+    setFormKwarran(cleanKwarran || 'Kemranjen');
+    setFormTempatLahir('Banyumas');
+    const defaultBirth =
+      effectiveGolongan === 'Siaga'
+        ? '2016-05-14'
+        : effectiveGolongan === 'Penegak'
+        ? '2009-02-04'
+        : effectiveGolongan === 'Pandega'
+        ? '2003-08-10'
+        : '2012-05-14';
+    setFormTanggalLahir(defaultBirth);
     setFormPangkalan(settings.kwartirCabang ? `${settings.kwartirCabang}` : 'SMP Negeri 1 Purwokerto');
     setFormGudep('02.001 - 02.002');
     setFormKelompokId(kelompokList[0]?.id || '');
@@ -144,6 +225,9 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
     setFormNomor(p.nomorPeserta);
     setFormNama(p.nama);
     setFormJK(p.jenisKelamin);
+    setFormKwarran(p.kwarran || 'Kemranjen');
+    setFormTempatLahir(p.tempatLahir || 'Banyumas');
+    setFormTanggalLahir(p.tanggalLahir || '');
     setFormPangkalan(p.pangkalan);
     setFormGudep(p.gudep || '');
     setFormKelompokId(p.kelompokId || '');
@@ -162,47 +246,62 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
     if (editingPeserta) {
       onUpdatePeserta({
         ...editingPeserta,
-        nomorPeserta: formNomor,
-        nama: formNama,
+        nomorPeserta: formNomor.trim(),
+        nama: formNama.trim(),
         jenisKelamin: formJK,
-        pangkalan: formPangkalan,
-        gudep: formGudep,
+        kwarran: formKwarran.trim() || undefined,
+        tempatLahir: formTempatLahir.trim() || undefined,
+        tanggalLahir: formTanggalLahir.trim() || undefined,
+        pangkalan: formPangkalan.trim(),
+        gudep: formGudep.trim(),
         kelompokId: formKelompokId,
         golongan: formGolongan,
         tingkatTKU: formTingkatTKU,
-        kontakHp: formHp,
-        namaPembina: formPembina,
+        kontakHp: formHp.trim(),
+        namaPembina: formPembina.trim(),
       });
     } else {
       const newPeserta: Peserta = {
         id: `peserta-${Date.now()}`,
-        nomorPeserta: formNomor,
-        nama: formNama,
+        nomorPeserta: formNomor.trim(),
+        nama: formNama.trim(),
         jenisKelamin: formJK,
-        pangkalan: formPangkalan,
-        gudep: formGudep,
+        kwarran: formKwarran.trim() || undefined,
+        tempatLahir: formTempatLahir.trim() || undefined,
+        tanggalLahir: formTanggalLahir.trim() || undefined,
+        pangkalan: formPangkalan.trim(),
+        gudep: formGudep.trim(),
         kelompokId: formKelompokId,
         golongan: formGolongan,
         tingkatTKU: formTingkatTKU,
-        kontakHp: formHp,
-        namaPembina: formPembina,
+        kontakHp: formHp.trim(),
+        namaPembina: formPembina.trim(),
       };
       onAddPeserta(newPeserta);
     }
     setIsModalOpen(false);
   };
 
-  // Filtered List: Hanya menampilkan peserta dari golongan yang aktif/dipilih
+  // Filtered List: Memfilter berdasarkan Golongan, Kata Kunci, Regu, Sekolah, Kwarran, & Status Nilai
   const filteredList = pesertaList.filter((p) => {
     const matchGolongan = (p.golongan || 'Penggalang') === effectiveGolongan;
 
+    const term = searchTerm.toLowerCase();
     const matchSearch =
-      p.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.nomorPeserta.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.pangkalan.toLowerCase().includes(searchTerm.toLowerCase());
+      p.nama.toLowerCase().includes(term) ||
+      p.nomorPeserta.toLowerCase().includes(term) ||
+      p.pangkalan.toLowerCase().includes(term) ||
+      (p.kwarran || '').toLowerCase().includes(term) ||
+      (p.tempatLahir || '').toLowerCase().includes(term);
 
     const matchKelompok =
       filterKelompok === 'ALL' || p.kelompokId === filterKelompok;
+
+    const matchPangkalan =
+      filterPangkalan === 'ALL' || p.pangkalan === filterPangkalan;
+
+    const matchKwarran =
+      filterKwarran === 'ALL' || (p.kwarran || '') === filterKwarran;
 
     const pen = penilaianMap[p.id];
     let matchStatus = true;
@@ -226,8 +325,30 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
       }
     }
 
-    return matchGolongan && matchSearch && matchKelompok && matchStatus;
+    return (
+      matchGolongan &&
+      matchSearch &&
+      matchKelompok &&
+      matchPangkalan &&
+      matchKwarran &&
+      matchStatus
+    );
   });
+
+  const isAnyFilterActive =
+    searchTerm !== '' ||
+    filterKelompok !== 'ALL' ||
+    filterPangkalan !== 'ALL' ||
+    filterKwarran !== 'ALL' ||
+    filterStatus !== 'ALL';
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setFilterKelompok('ALL');
+    setFilterPangkalan('ALL');
+    setFilterKwarran('ALL');
+    setFilterStatus('ALL');
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -413,52 +534,142 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200 space-y-3">
-        {/* Golongan Filter Indicator */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-stone-100">
-          <div className="flex items-center gap-1.5 text-xs text-stone-700 font-bold">
+      <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-stone-200 space-y-3.5">
+        {/* Golongan Filter Indicator & Kwarran Table Toggle */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-stone-100">
+          <div className="flex items-center gap-2 text-xs text-stone-700 font-bold">
             <Layers className="w-4 h-4 text-amber-600" />
             <span>Golongan Peserta:</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className={`px-3 py-1 rounded-xl text-xs font-bold text-white shadow-xs ${
-              effectiveGolongan === 'Siaga'
-                ? 'bg-emerald-600'
-                : effectiveGolongan === 'Penggalang'
-                ? 'bg-rose-600'
-                : effectiveGolongan === 'Penegak'
-                ? 'bg-amber-600'
-                : 'bg-stone-700'
-            }`}>
+            <span
+              className={`px-3 py-1 rounded-xl text-xs font-bold text-white shadow-xs ${
+                effectiveGolongan === 'Siaga'
+                  ? 'bg-emerald-600'
+                  : effectiveGolongan === 'Penggalang'
+                  ? 'bg-rose-600'
+                  : effectiveGolongan === 'Penegak'
+                  ? 'bg-amber-600'
+                  : 'bg-stone-700'
+              }`}
+            >
               Khusus Golongan {effectiveGolongan}
             </span>
             <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
               {filteredList.length} Peserta Terdaftar
             </span>
           </div>
+
+          <div className="flex items-center gap-2">
+            {/* Tombol Tabel Distribusi Kwarran */}
+            <button
+              type="button"
+              onClick={() => setShowKwarranTable(!showKwarranTable)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                showKwarranTable
+                  ? 'bg-amber-100 text-amber-900 border-amber-300 shadow-xs'
+                  : 'bg-stone-100 hover:bg-stone-200 text-stone-700 border-stone-200'
+              }`}
+              title="Lihat rekapitulasi jumlah calon Garuda per Kwarran"
+            >
+              <TableIcon className="w-3.5 h-3.5 text-amber-600" />
+              <span>Tabel Kwarran ({kwarranDistribution.length})</span>
+              {showKwarranTable ? (
+                <ChevronUp className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="relative flex-1 min-w-[240px]">
+        {/* Search & Filter Controls Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+          {/* Search box */}
+          <div className="relative md:col-span-4">
             <Search className="w-4 h-4 text-stone-400 absolute left-3 top-3" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Cari berdasarkan nama, nomor peserta, pangkalan..."
+              placeholder="Cari nama, no. peserta, sekolah, kwarran, TTL..."
               className="w-full pl-9 pr-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 text-xs text-stone-600">
-              <Filter className="w-3.5 h-3.5 text-amber-700" />
+          {/* Filter Per Sekolah / Pangkalan */}
+          <div className="md:col-span-3 flex items-center gap-1.5 text-xs text-stone-600">
+            <School className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+            <span className="font-semibold shrink-0">Sekolah:</span>
+            <select
+              value={filterPangkalan}
+              onChange={(e) => setFilterPangkalan(e.target.value)}
+              className="w-full bg-stone-50 border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-amber-500 font-medium truncate"
+              title="Filter calon peserta per Pangkalan / Sekolah"
+            >
+              <option value="ALL">Semua Sekolah ({uniqueSekolahList.length})</option>
+              {uniqueSekolahList.map((sek) => (
+                <option key={sek} value={sek}>
+                  {sek}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter Per Kwarran */}
+          <div className="md:col-span-3 flex items-center gap-1.5 text-xs text-stone-600">
+            <MapPin className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+            <span className="font-semibold shrink-0">Kwarran:</span>
+            <select
+              value={filterKwarran}
+              onChange={(e) => setFilterKwarran(e.target.value)}
+              className="w-full bg-stone-50 border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-amber-500 font-medium truncate"
+              title="Filter calon peserta per Kwartir Ranting (Kwarran)"
+            >
+              <option value="ALL">Semua Kwarran</option>
+              {uniqueKwarranList.map((kw) => (
+                <option key={kw} value={kw}>
+                  {kw}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter Regu & Status */}
+          <div className="md:col-span-2 flex items-center gap-2 justify-end">
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value as any)}
+              className="bg-stone-50 border border-stone-300 rounded-lg px-2 py-1.5 text-xs focus:ring-1 focus:ring-amber-500 font-medium truncate"
+              title="Filter status penilaian"
+            >
+              <option value="ALL">Semua Status</option>
+              <option value="LULUS">Lulus (≥ 80%)</option>
+              <option value="BELUM_LULUS">Belum Lulus (&lt; 80%)</option>
+              <option value="BELUM_DINILAI">Belum Dinilai</option>
+            </select>
+
+            {isAnyFilterActive && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-bold border border-rose-200 transition-colors shrink-0"
+                title="Reset Semua Filter"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Secondary Filter Bar: Filter Regu & Active Filter Badges */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-stone-100 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-stone-600">
+            <div className="flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-amber-700" />
               <span className="font-semibold">Regu:</span>
               <select
                 value={filterKelompok}
                 onChange={(e) => setFilterKelompok(e.target.value)}
-                className="bg-stone-50 border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-amber-500 font-medium"
+                className="bg-stone-50 border border-stone-300 rounded-lg px-2 py-1 text-xs focus:ring-1 focus:ring-amber-500 font-medium"
               >
                 <option value="ALL">Semua Regu</option>
                 {kelompokList.map((k) => (
@@ -469,21 +680,131 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
               </select>
             </div>
 
-            <div className="flex items-center gap-1.5 text-xs text-stone-600">
-              <span className="font-semibold">Status:</span>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as any)}
-                className="bg-stone-50 border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-amber-500 font-medium"
-              >
-                <option value="ALL">Semua Status</option>
-                <option value="LULUS">Lulus (≥ 80%)</option>
-                <option value="BELUM_LULUS">Belum Lulus (&lt; 80%)</option>
-                <option value="BELUM_DINILAI">Belum Dinilai</option>
-              </select>
-            </div>
+            {/* Filter Active Chips */}
+            {filterPangkalan !== 'ALL' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 font-medium text-[11px]">
+                Sekolah: {filterPangkalan}
+                <button
+                  type="button"
+                  onClick={() => setFilterPangkalan('ALL')}
+                  className="hover:text-rose-600 ml-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+
+            {filterKwarran !== 'ALL' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-200 font-medium text-[11px]">
+                Kwarran: {filterKwarran}
+                <button
+                  type="button"
+                  onClick={() => setFilterKwarran('ALL')}
+                  className="hover:text-rose-600 ml-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+          </div>
+
+          <div className="text-[11px] text-stone-500 font-medium">
+            Menampilkan <strong className="text-stone-900">{filteredList.length}</strong> dari{' '}
+            {pesertaList.filter((p) => (p.golongan || 'Penggalang') === effectiveGolongan).length} peserta
           </div>
         </div>
+
+        {/* Collapsible: Tabel Rekapitulasi Distribusi per Kwarran */}
+        {showKwarranTable && (
+          <div className="mt-3 p-4 rounded-xl bg-stone-50 border border-stone-200 space-y-3 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-amber-700" />
+                <h4 className="text-xs sm:text-sm font-extrabold text-stone-900 uppercase tracking-wide">
+                  Tabel Distribusi Calon Pramuka Garuda per Kwartir Ranting ({effectiveGolongan})
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowKwarranTable(false)}
+                className="text-stone-400 hover:text-stone-700 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-stone-200/80 text-stone-700 font-bold border-b border-stone-300">
+                    <th className="py-2 px-3 text-center w-10">No</th>
+                    <th className="py-2 px-3">Nama Kwartir Ranting (Kwarran)</th>
+                    <th className="py-2 px-3 text-center">Jumlah Peserta</th>
+                    <th className="py-2 px-3 text-center">Lulus (≥ 80%)</th>
+                    <th className="py-2 px-3 text-center">Belum Lulus</th>
+                    <th className="py-2 px-3 text-center">Belum Dinilai</th>
+                    <th className="py-2 px-3 text-right">Aksi Filter</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-200 bg-white">
+                  {kwarranDistribution.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-4 text-center text-stone-400 italic">
+                        Belum ada data kwarran pada golongan ini.
+                      </td>
+                    </tr>
+                  ) : (
+                    kwarranDistribution.map(([kw, st], idx) => (
+                      <tr
+                        key={kw}
+                        className={`hover:bg-amber-50/50 transition-colors ${
+                          filterKwarran === kw ? 'bg-amber-100/60 font-bold' : ''
+                        }`}
+                      >
+                        <td className="py-2 px-3 text-center text-stone-400 font-bold">
+                          {idx + 1}
+                        </td>
+                        <td className="py-2 px-3 font-semibold text-stone-800">
+                          <div className="flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Kwarran {kw}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-3 text-center font-extrabold text-stone-900">
+                          {st.total}
+                        </td>
+                        <td className="py-2 px-3 text-center text-emerald-700 font-bold">
+                          {st.lulus}
+                        </td>
+                        <td className="py-2 px-3 text-center text-rose-700 font-bold">
+                          {st.belum}
+                        </td>
+                        <td className="py-2 px-3 text-center text-stone-500">
+                          {st.belumDinilai}
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFilterKwarran(filterKwarran === kw ? 'ALL' : kw);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition-all ${
+                              filterKwarran === kw
+                                ? 'bg-amber-600 text-white'
+                                : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                            }`}
+                          >
+                            {filterKwarran === kw ? 'Batal Filter' : 'Filter Kwarran Ini'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Participant Table */}
@@ -491,12 +812,14 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs sm:text-sm border-collapse">
             <thead>
-              <tr className="bg-stone-100 text-stone-700 font-bold border-b border-stone-200">
-                <th className="py-3 px-3 w-12 text-center">NO</th>
+              <tr className="bg-stone-100 text-stone-700 font-bold border-b border-stone-200 text-xs">
+                <th className="py-3 px-2.5 w-10 text-center">NO</th>
                 <th className="py-3 px-3">NO. PESERTA</th>
-                <th className="py-3 px-3">NAMA PESERTA</th>
-                <th className="py-3 px-3">PANGKALAN & GUDEP</th>
-                <th className="py-3 px-3">REGU / KELOMPOK</th>
+                <th className="py-3 px-3">NAMA PESERTA & TTL</th>
+                <th className="py-3 px-3">KWARRAN</th>
+                <th className="py-3 px-3">PANGKALAN (SEKOLAH) & GUDEP</th>
+                <th className="py-3 px-3">GOLONGAN & DETEKSI USIA</th>
+                <th className="py-3 px-3">REGU / TIM</th>
                 <th className="py-3 px-3 text-center">NILAI & STATUS</th>
                 <th className="py-3 px-3 text-right">AKSI</th>
               </tr>
@@ -504,8 +827,8 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
             <tbody className="divide-y divide-stone-100">
               {filteredList.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center text-stone-400 italic">
-                    Tidak ditemukan peserta yang sesuai kriteria pencarian.
+                  <td colSpan={9} className="py-10 text-center text-stone-400 italic">
+                    Tidak ditemukan peserta yang sesuai kriteria pencarian dan filter.
                   </td>
                 </tr>
               ) : (
@@ -527,33 +850,104 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
                   const isSiaga = p.golongan === 'Siaga';
                   const maxSkor = pen ? pen.wawancara.length * 5 : (isSiaga ? 45 : 55);
 
+                  // Deteksi kesesuaian golongan kepramukaan berdasarkan tanggal lahir
+                  const deteksi = deteksiGolonganDariTanggalLahir(
+                    p.tanggalLahir,
+                    settings.tanggalDefault,
+                    p.golongan
+                  );
+
                   return (
                     <tr key={p.id} className="hover:bg-amber-50/30 transition-colors">
-                      <td className="py-3.5 px-3 text-center font-bold text-stone-400">
+                      <td className="py-3 px-2.5 text-center font-bold text-stone-400">
                         {idx + 1}
                       </td>
-                      <td className="py-3.5 px-3 font-mono font-bold text-amber-900 text-xs">
+                      <td className="py-3 px-3 font-mono font-bold text-amber-900 text-xs">
                         {p.nomorPeserta}
                       </td>
-                      <td className="py-3.5 px-3">
+                      {/* Nama Peserta & Tempat Tanggal Lahir */}
+                      <td className="py-3 px-3">
                         <div className="font-extrabold text-stone-900">{p.nama}</div>
-                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500 mt-0.5">
-                          <span>{p.jenisKelamin === 'L' ? 'Putra (L)' : 'Putri (P)'}</span>
-                          <span>•</span>
-                          <span className="font-bold text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                            {p.golongan || configuredGolongan}
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-stone-600 mt-0.5">
+                          <span className="font-medium">
+                            {p.jenisKelamin === 'L' ? 'Putra (L)' : 'Putri (P)'}
                           </span>
                           <span>•</span>
-                          <span className="font-semibold text-stone-700">TKU: {p.tingkatTKU}</span>
+                          <span className="flex items-center gap-1 text-stone-700">
+                            <Calendar className="w-3 h-3 text-stone-400" />
+                            {formatTempatTanggalLahir(p.tempatLahir, p.tanggalLahir)}
+                          </span>
                         </div>
                       </td>
-                      <td className="py-3.5 px-3">
-                        <div className="font-semibold text-stone-800">{p.pangkalan}</div>
-                        <div className="text-[11px] text-stone-500">
+                      {/* Kwarran (Kwartir Ranting) */}
+                      <td className="py-3 px-3">
+                        <button
+                          type="button"
+                          onClick={() => setFilterKwarran(p.kwarran || 'ALL')}
+                          className="flex items-center gap-1 font-semibold text-stone-800 hover:text-amber-800 text-xs cursor-pointer group"
+                          title="Klik untuk memfilter Kwarran ini"
+                        >
+                          <MapPin className="w-3.5 h-3.5 text-amber-600 group-hover:scale-110 transition-transform" />
+                          <span>{p.kwarran || 'Belum Diisi'}</span>
+                        </button>
+                      </td>
+                      {/* Pangkalan (Sekolah) & Gudep */}
+                      <td className="py-3 px-3">
+                        <button
+                          type="button"
+                          onClick={() => setFilterPangkalan(p.pangkalan)}
+                          className="font-semibold text-stone-800 hover:text-amber-800 text-left cursor-pointer group"
+                          title="Klik untuk memfilter sekolah ini"
+                        >
+                          <div className="flex items-center gap-1">
+                            <Building2 className="w-3.5 h-3.5 text-stone-400 group-hover:text-amber-600" />
+                            <span>{p.pangkalan}</span>
+                          </div>
+                        </button>
+                        <div className="text-[11px] text-stone-500 mt-0.5">
                           {p.gudep ? `Gudep: ${p.gudep}` : 'Gudep Belum Diisi'}
                         </div>
                       </td>
-                      <td className="py-3.5 px-3">
+                      {/* Golongan & Deteksi Usia Otomatis */}
+                      <td className="py-3 px-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-bold text-amber-950 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-xs">
+                            {p.golongan || configuredGolongan}
+                          </span>
+                          <span className="text-[11px] font-semibold text-stone-700">
+                            TKU: {p.tingkatTKU}
+                          </span>
+                        </div>
+                        {/* Status Deteksi Usia & Rekomendasi Golongan */}
+                        <div className="mt-1">
+                          {deteksi ? (
+                            <span
+                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                                deteksi.isSesuai
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                  : 'bg-amber-50 text-amber-900 border-amber-300'
+                              }`}
+                              title={`Usia: ${deteksi.usiaFormatted} • Rentang resmi ${deteksi.golonganTerdeteksi}: ${deteksi.rentangUsiaResmi}`}
+                            >
+                              {deteksi.isSesuai ? (
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                              ) : (
+                                <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                              )}
+                              <span>
+                                {deteksi.usiaFormatted} • {deteksi.golonganTerdeteksi} (
+                                {deteksi.isSesuai ? 'Sesuai' : 'Perlu Cek'})
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-stone-400 italic">
+                              TTL belum diisi
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      {/* Regu / Kelompok */}
+                      <td className="py-3 px-3">
                         {kel ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-stone-100 text-stone-800 font-medium text-xs">
                             {kel.nama}
@@ -562,7 +956,8 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
                           <span className="text-stone-400 text-xs italic">-</span>
                         )}
                       </td>
-                      <td className="py-3.5 px-3 text-center">
+                      {/* Nilai & Status */}
+                      <td className="py-3 px-3 text-center">
                         {pen ? (
                           <div>
                             <div className="font-extrabold text-stone-900 text-sm">
@@ -595,11 +990,12 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
                           </span>
                         )}
                       </td>
-                      <td className="py-3.5 px-3 text-right">
+                      {/* Aksi */}
+                      <td className="py-3 px-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => onNavigateToNilai(p.id)}
-                            className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors"
+                            className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                             title="Buka Form Penilaian"
                           >
                             <FileEdit className="w-3.5 h-3.5" />
@@ -609,7 +1005,7 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
                           {pen && (
                             <button
                               onClick={() => onOpenPrintPreview(p.id)}
-                              className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg transition-colors"
+                              className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg transition-colors cursor-pointer"
                               title="Cetak Lembar Resmi"
                             >
                               <Printer className="w-3.5 h-3.5" />
@@ -618,7 +1014,7 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
 
                           <button
                             onClick={() => openEditModal(p)}
-                            className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg transition-colors"
+                            className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg transition-colors cursor-pointer"
                             title="Edit Data Peserta"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -626,7 +1022,7 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
 
                           <button
                             onClick={() => setDeleteCandidate(p)}
-                            className="p-1.5 bg-stone-100 hover:bg-rose-100 text-stone-400 hover:text-rose-600 rounded-lg transition-colors"
+                            className="p-1.5 bg-stone-100 hover:bg-rose-100 text-stone-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
                             title="Hapus Peserta"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -642,15 +1038,15 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
         </div>
       </div>
 
-      {/* Modal Add / Edit */}
+      {/* Modal Add / Edit Peserta */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 border border-stone-200 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 border border-stone-200 animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto">
             <h3 className="text-base font-extrabold text-stone-900 tracking-wide uppercase mb-4 pb-2 border-b border-stone-200">
               {editingPeserta ? 'Edit Data Peserta' : 'Tambah Peserta Baru'}
             </h3>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-3.5">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1">
@@ -695,6 +1091,127 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
                 />
               </div>
 
+              {/* Kwarran (Kwartir Ranting) */}
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">
+                  Kwartir Ranting (Kwarran) *
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <select
+                    value={
+                      DAFTAR_KWARRAN_BANYUMAS.includes(formKwarran) ? formKwarran : 'CUSTOM'
+                    }
+                    onChange={(e) => {
+                      if (e.target.value !== 'CUSTOM') {
+                        setFormKwarran(e.target.value);
+                      }
+                    }}
+                    className="w-full bg-stone-50 border border-stone-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm focus:ring-1 focus:ring-amber-500 font-medium"
+                  >
+                    <option value="">-- Pilih Kwarran di Banyumas --</option>
+                    {DAFTAR_KWARRAN_BANYUMAS.map((kw) => (
+                      <option key={kw} value={kw}>
+                        Kwarran {kw}
+                      </option>
+                    ))}
+                    <option value="CUSTOM">Lainnya / Tulis Manual...</option>
+                  </select>
+
+                  <input
+                    type="text"
+                    value={formKwarran}
+                    onChange={(e) => setFormKwarran(e.target.value)}
+                    placeholder="Nama Kwarran (contoh: Kemranjen)"
+                    className="w-full bg-stone-50 border border-stone-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Tempat & Tanggal Lahir (TTL) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    Tempat Lahir
+                  </label>
+                  <input
+                    type="text"
+                    value={formTempatLahir}
+                    onChange={(e) => setFormTempatLahir(e.target.value)}
+                    placeholder="Contoh: Banyumas"
+                    className="w-full bg-stone-50 border border-stone-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    Tanggal Lahir
+                  </label>
+                  <input
+                    type="date"
+                    value={formTanggalLahir}
+                    onChange={(e) => setFormTanggalLahir(e.target.value)}
+                    className="w-full bg-stone-50 border border-stone-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Real-Time Golongan & Age Detection Card */}
+              {modalDeteksiGolongan && (
+                <div
+                  className={`p-3 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                    modalDeteksiGolongan.isSesuai
+                      ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
+                      : 'bg-amber-50/90 border-amber-300 text-amber-950'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    {modalDeteksiGolongan.isSesuai ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <div className="font-bold flex items-center gap-1.5">
+                        <span>
+                          Usia: <strong>{modalDeteksiGolongan.usiaFormatted}</strong>
+                        </span>
+                        <span>•</span>
+                        <span>
+                          Terdeteksi Masuk Golongan:{' '}
+                          <strong className="underline underline-offset-2">
+                            {modalDeteksiGolongan.golonganTerdeteksi}
+                          </strong>{' '}
+                          ({modalDeteksiGolongan.rentangUsiaResmi})
+                        </span>
+                      </div>
+                      <p className="text-[11px] opacity-90 mt-0.5">
+                        {modalDeteksiGolongan.isSesuai
+                          ? `Usia peserta sesuai dengan golongan yang didaftarkan (${formGolongan}).`
+                          : `Usia peserta terdeteksi masuk rentang ${modalDeteksiGolongan.golonganTerdeteksi}. Golongan terpilih saat ini: ${formGolongan}.`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {!modalDeteksiGolongan.isSesuai &&
+                    (modalDeteksiGolongan.golonganTerdeteksi === 'Siaga' ||
+                      modalDeteksiGolongan.golonganTerdeteksi === 'Penggalang' ||
+                      modalDeteksiGolongan.golonganTerdeteksi === 'Penegak' ||
+                      modalDeteksiGolongan.golonganTerdeteksi === 'Pandega') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = modalDeteksiGolongan.golonganTerdeteksi as GolonganType;
+                          setFormGolongan(target);
+                          setFormTingkatTKU(getDefaultTKUForGolongan(target));
+                        }}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-black text-[11px] rounded-lg shadow-xs transition-all shrink-0 cursor-pointer"
+                      >
+                        Terapkan Golongan {modalDeteksiGolongan.golonganTerdeteksi}
+                      </button>
+                    )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1">
@@ -738,10 +1255,10 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
                     }}
                     className="w-full bg-stone-50 border border-stone-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm focus:ring-1 focus:ring-amber-500 font-bold text-amber-950"
                   >
-                    <option value="Siaga">Siaga</option>
-                    <option value="Penggalang">Penggalang</option>
-                    <option value="Penegak">Penegak</option>
-                    <option value="Pandega">Pandega</option>
+                    <option value="Siaga">Siaga (7 - 10 Tahun)</option>
+                    <option value="Penggalang">Penggalang (11 - 15 Tahun)</option>
+                    <option value="Penegak">Penegak (16 - 20 Tahun)</option>
+                    <option value="Pandega">Pandega (21 - 25 Tahun)</option>
                   </select>
                 </div>
 
@@ -813,13 +1330,13 @@ export const PesertaView: React.FC<PesertaViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-xs sm:text-sm rounded-xl transition-colors"
+                  className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-xs sm:text-sm rounded-xl transition-colors cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md shadow-amber-600/20 transition-all"
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md shadow-amber-600/20 transition-all cursor-pointer"
                 >
                   {editingPeserta ? 'Simpan Perubahan' : 'Tambahkan Peserta'}
                 </button>

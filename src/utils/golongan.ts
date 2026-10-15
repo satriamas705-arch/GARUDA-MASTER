@@ -238,3 +238,188 @@ export function formatPencapaianForGolongan(text: string, golonganSetting: strin
 
   return formatted;
 }
+
+/**
+ * Daftar 27 Kwartir Ranting (Kwarran) resmi di wilayah Kwartir Cabang Banyumas
+ */
+export const DAFTAR_KWARRAN_BANYUMAS: string[] = [
+  'Ajibarang',
+  'Banyumas',
+  'Baturraden',
+  'Cilongok',
+  'Gumelar',
+  'Jatilawang',
+  'Kalibagor',
+  'Karanglewas',
+  'Kebasen',
+  'Kedungbanteng',
+  'Kembaran',
+  'Kemranjen',
+  'Lumbir',
+  'Patikraja',
+  'Pekuncen',
+  'Purwojati',
+  'Purwokerto Barat',
+  'Purwokerto Selatan',
+  'Purwokerto Timur',
+  'Purwokerto Utara',
+  'Rawalo',
+  'Sokaraja',
+  'Somagede',
+  'Sumbang',
+  'Sumpiuh',
+  'Tambak',
+  'Wangon',
+];
+
+export interface DeteksiGolonganResult {
+  usiaTahun: number;
+  usiaBulan: number;
+  usiaTotalBulan: number;
+  usiaFormatted: string; // contoh: "13 Thn 4 Bln"
+  golonganTerdeteksi: GolonganType | 'Prasiaga' | 'Dewasa';
+  rentangUsiaResmi: string; // contoh: "11 - 15 Tahun"
+  isSesuai: boolean; // apakah cocok dengan golongan terdaftar
+  statusText: string; // contoh: "Sesuai Golongan" / "Usia belum masuk rentang"
+  badgeColorClass: string;
+}
+
+/**
+ * Hitung usia presisi (tahun dan bulan) berdasarkan tanggal lahir
+ */
+export function hitungUsia(
+  tanggalLahirStr: string | undefined,
+  referenceDateStr?: string
+): { tahun: number; bulan: number; hari: number; totalBulan: number } | null {
+  if (!tanggalLahirStr) return null;
+  const birth = new Date(tanggalLahirStr);
+  if (isNaN(birth.getTime())) return null;
+
+  const ref = referenceDateStr ? new Date(referenceDateStr) : new Date();
+  if (isNaN(ref.getTime())) return null;
+
+  let tahun = ref.getFullYear() - birth.getFullYear();
+  let bulan = ref.getMonth() - birth.getMonth();
+  let hari = ref.getDate() - birth.getDate();
+
+  if (hari < 0) {
+    bulan--;
+  }
+
+  if (bulan < 0) {
+    tahun--;
+    bulan += 12;
+  }
+
+  if (tahun < 0) {
+    return { tahun: 0, bulan: 0, hari: 0, totalBulan: 0 };
+  }
+
+  return {
+    tahun,
+    bulan,
+    hari: Math.max(0, hari),
+    totalBulan: tahun * 12 + bulan,
+  };
+}
+
+/**
+ * Deteksi golongan kepramukaan resmi berdasarkan tanggal lahir (sesuai AD/ART Gerakan Pramuka):
+ * - Siaga: 7 s.d. 10 tahun
+ * - Penggalang: 11 s.d. 15 tahun
+ * - Penegak: 16 s.d. 20 tahun
+ * - Pandega: 21 s.d. 25 tahun
+ * - < 7 tahun: Prasiaga / Belum Masuk Golongan
+ * - > 25 tahun: Dewasa / Pembina
+ */
+export function deteksiGolonganDariTanggalLahir(
+  tanggalLahirStr: string | undefined,
+  referenceDateStr?: string,
+  golonganTerdaftar?: GolonganType | string
+): DeteksiGolonganResult | null {
+  const usia = hitungUsia(tanggalLahirStr, referenceDateStr);
+  if (!usia) return null;
+
+  const { tahun, bulan } = usia;
+  let golongan: GolonganType | 'Prasiaga' | 'Dewasa';
+  let rentang = '';
+
+  if (tahun < 7) {
+    golongan = 'Prasiaga';
+    rentang = '< 7 Tahun';
+  } else if (tahun >= 7 && tahun <= 10) {
+    golongan = 'Siaga';
+    rentang = '7 - 10 Tahun';
+  } else if (tahun >= 11 && tahun <= 15) {
+    golongan = 'Penggalang';
+    rentang = '11 - 15 Tahun';
+  } else if (tahun >= 16 && tahun <= 20) {
+    golongan = 'Penegak';
+    rentang = '16 - 20 Tahun';
+  } else if (tahun >= 21 && tahun <= 25) {
+    golongan = 'Pandega';
+    rentang = '21 - 25 Tahun';
+  } else {
+    golongan = 'Dewasa';
+    rentang = '> 25 Tahun';
+  }
+
+  const terdaftar = golonganTerdaftar ? extractGolonganName(golonganTerdaftar) : undefined;
+  const isSesuai = terdaftar ? golongan === terdaftar : true;
+
+  let statusText = 'Sesuai Golongan';
+  let badgeColorClass = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+
+  if (terdaftar && !isSesuai) {
+    statusText = `Disarankan: ${golongan} (${rentang})`;
+    badgeColorClass = 'bg-amber-100 text-amber-900 border-amber-300';
+  }
+
+  const bulanStr = bulan > 0 ? ` ${bulan} Bln` : '';
+  const usiaFormatted = `${tahun} Thn${bulanStr}`;
+
+  return {
+    usiaTahun: tahun,
+    usiaBulan: bulan,
+    usiaTotalBulan: usia.totalBulan,
+    usiaFormatted,
+    golonganTerdeteksi: golongan,
+    rentangUsiaResmi: rentang,
+    isSesuai,
+    statusText,
+    badgeColorClass,
+  };
+}
+
+/**
+ * Format string gabungan Tempat dan Tanggal Lahir (contoh: "Banyumas, 14 Mei 2012")
+ */
+export function formatTempatTanggalLahir(
+  tempatLahir?: string,
+  tanggalLahir?: string
+): string {
+  const parts: string[] = [];
+  if (tempatLahir && tempatLahir.trim()) {
+    parts.push(tempatLahir.trim());
+  }
+
+  if (tanggalLahir && tanggalLahir.trim()) {
+    try {
+      const date = new Date(tanggalLahir);
+      if (!isNaN(date.getTime())) {
+        const months = [
+          'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+          'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+        ];
+        const formattedDate = `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+        parts.push(formattedDate);
+      } else {
+        parts.push(tanggalLahir);
+      }
+    } catch {
+      parts.push(tanggalLahir);
+    }
+  }
+
+  return parts.length > 0 ? parts.join(', ') : '-';
+}

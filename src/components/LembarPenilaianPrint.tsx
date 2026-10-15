@@ -16,7 +16,12 @@ import {
 import { exportElementToPdf } from '../utils/generatePdf';
 import { exportLembarIndividuToExcel } from '../utils/exportExcel';
 import { formatTanggalIndonesia } from '../utils/formatDate';
-import { extractGolonganName, formatPencapaianForGolongan } from '../utils/golongan';
+import {
+  extractGolonganName,
+  formatPencapaianForGolongan,
+  formatTempatTanggalLahir,
+  deteksiGolonganDariTanggalLahir,
+} from '../utils/golongan';
 
 interface LembarPenilaianPrintProps {
   peserta: Peserta;
@@ -387,11 +392,35 @@ export const LembarPenilaianPrint: React.FC<LembarPenilaianPrintProps> = ({
                       {peserta.nama}
                     </span>
                   </div>
+                  {(peserta.tempatLahir || peserta.tanggalLahir) && (
+                    <div className="flex">
+                      <span className="w-28 font-bold text-stone-700">TTL / Usia</span>
+                      <span className="w-4">:</span>
+                      <span className="text-stone-900 font-semibold">
+                        {formatTempatTanggalLahir(peserta.tempatLahir, peserta.tanggalLahir)}
+                        {(() => {
+                          const det = deteksiGolonganDariTanggalLahir(
+                            peserta.tanggalLahir,
+                            settings.tanggalDefault,
+                            peserta.golongan
+                          );
+                          return det ? ` (${det.usiaFormatted})` : '';
+                        })()}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex">
-                    <span className="w-28 font-bold text-stone-700">Pangkalan / Gudep</span>
+                    <span className="w-28 font-bold text-stone-700">Kwarran / Gudep</span>
                     <span className="w-4">:</span>
                     <span className="text-stone-900 font-semibold">
-                      {peserta.pangkalan} {peserta.gudep ? `(${peserta.gudep})` : ''}
+                      {peserta.kwarran ? `Kwarran ${peserta.kwarran}` : '-'} {peserta.gudep ? `(Gudep ${peserta.gudep})` : ''}
+                    </span>
+                  </div>
+                  <div className="flex">
+                    <span className="w-28 font-bold text-stone-700">Pangkalan</span>
+                    <span className="w-4">:</span>
+                    <span className="text-stone-900 font-semibold">
+                      {peserta.pangkalan}
                     </span>
                   </div>
                   <div className="flex">
